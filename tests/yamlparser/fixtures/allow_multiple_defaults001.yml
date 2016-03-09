@@ -1,0 +1,28 @@
+- defaults:
+    name: main-defaults
+    jdk: 'Java 1.7.0_51'
+    quiet-period: 300
+    block-downstream: true
+    block-upstream: false
+    
+    logrotate:
+        artifactDaysToKeep: 14
+        artifactNumToKeep: 5
+        daysToKeep: 30
+        numToKeep: -1    
+    
+    
+- defaults:
+    name: ui-department-defaults
+    jdk: 'Java 1.5'
+    quiet-period: 600
+
+- defaults:
+    name: prod-branch-defaults
+    logrotate:
+        artifactDaysToKeep: 365
+    
+- job:
+    name: MultipleDefaultsTestJob
+    description: 'specialized2 type of project1 type'
+    defaults: [main-defaults, ui-department-defaults, prod-branch-defaults]

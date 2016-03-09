@@ -129,23 +129,35 @@ class YamlParser(object):
     def applyDefaults(self, data, override_dict=None):
         if override_dict is None:
             override_dict = {}
-
-        whichdefaults = data.get('defaults', 'global')
-        defaults = copy.deepcopy(self.data.get('defaults',
-                                 {}).get(whichdefaults, {}))
-        if defaults == {} and whichdefaults != 'global':
-            raise JenkinsJobsException("Unknown defaults set: '{0}'"
-                                       .format(whichdefaults))
-
-        for key in override_dict.keys():
-            if key in defaults.keys():
-                defaults[key] = override_dict[key]
-
+        
+        #create empty dict for return data
         newdata = {}
-        newdata.update(defaults)
+        
+        #get name or list of names of defaults
+        whichdefaults = data.get('defaults', 'global')
+        
+        if not isinstance(whichdefaults, list):
+            whichdefaults = [whichdefaults]
+                
+        for defName in whichdefaults:        
+            #make a local copy of the defaults dict
+            defaults = copy.deepcopy(self.data.get('defaults',
+                                     {}).get(defName, {}))
+            #if it is blank, but was specified by name, there's a problem                         
+            if defaults == {} and defName != 'global':
+                raise JenkinsJobsException("Unknown defaults set: '{0}'"
+                                           .format(defName))
+            #lay it into the return data                               
+            newdata.update(defaults)
+            
+        #lay the override_dict (parameter) into the return data
+        for key in override_dict.keys():
+            if key in newdata.keys():
+                newdata[key] = override_dict[key]
+
         newdata.update(data)
         return newdata
-
+        
     def formatDescription(self, job):
         if self.keep_desc:
             description = job.get("description", None)
