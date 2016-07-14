@@ -32,6 +32,7 @@ Example::
 """
 
 import logging
+import pkg_resources
 import xml.etree.ElementTree as XML
 
 from jenkins_jobs.errors import InvalidAttributeError
@@ -133,8 +134,32 @@ def github(parser, xml_parent, data):
     github = XML.SubElement(xml_parent,
                             'com.coravy.hudson.plugins.github.'
                             'GithubProjectProperty')
-    github_url = XML.SubElement(github, 'projectUrl')
-    github_url.text = data['url']
+    try:
+        XML.SubElement(github, 'projectUrl').text = data['url']
+    except KeyError as e:
+        raise MissingAttributeError(e)
+
+
+def gitlab(parser, xml_parent, data):
+    """yaml: gitlab
+    Sets the GitLab connection for the project. Configured via Jenkins Global
+    Configuration.
+    Requires the Jenkins :jenkins-wiki:`GitLab Plugin <GitLab+Plugin>`.
+
+    :arg str connection: the GitLab connection name (required)
+
+    Example:
+
+    .. literalinclude:: /../../tests/properties/fixtures/gitlab.yaml
+       :language: yaml
+    """
+    gitlab = XML.SubElement(xml_parent,
+                            'com.dabsquared.gitlabjenkins.connection.'
+                            'GitLabConnectionProperty')
+    try:
+        XML.SubElement(gitlab, 'gitLabConnection').text = data['connection']
+    except KeyError as e:
+        raise MissingAttributeError(e)
 
 
 def least_load(parser, xml_parent, data):
@@ -185,17 +210,20 @@ def throttle(parser, xml_parent, data):
         data.get('max-total', '0'))
     # TODO: What's "categories"?
     # XML.SubElement(throttle, 'categories')
-    if data.get('enabled', True):
-        XML.SubElement(throttle, 'throttleEnabled').text = 'true'
-    else:
-        XML.SubElement(throttle, 'throttleEnabled').text = 'false'
+    XML.SubElement(throttle, 'throttleEnabled').text = str(
+        data.get('enabled', True)).lower()
     cat = data.get('categories', [])
     if cat:
         cn = XML.SubElement(throttle, 'categories')
         for c in cat:
             XML.SubElement(cn, 'string').text = str(c)
 
-    XML.SubElement(throttle, 'throttleOption').text = data.get('option')
+    options_list = ('category', 'project')
+    option = data.get('option')
+    if option not in options_list:
+        raise InvalidAttributeError('option', option, options_list)
+
+    XML.SubElement(throttle, 'throttleOption').text = option
     XML.SubElement(throttle, 'configVersion').text = '1'
 
     matrixopt = XML.SubElement(throttle, 'matrixOptions')
@@ -309,44 +337,61 @@ def authorization(parser, xml_parent, data):
     """yaml: authorization
     Specifies an authorization matrix
 
+    .. _authorization:
+
     :arg list <name>: `<name>` is the name of the group or user, containing
         the list of rights to grant.
 
        :<name> rights:
-            * **job-delete**
-            * **job-configure**
-            * **job-read**
-            * **job-extended-read**
-            * **job-discover**
+            * **credentials-create**
+            * **credentials-delete**
+            * **credentials-manage-domains**
+            * **credentials-update**
+            * **credentials-view**
             * **job-build**
-            * **job-workspace**
             * **job-cancel**
+            * **job-configure**
+            * **job-delete**
+            * **job-discover**
+            * **job-extended-read**
+            * **job-move**
+            * **job-read**
+            * **job-status**
+            * **job-workspace**
+            * **ownership-jobs**
             * **run-delete**
             * **run-update**
             * **scm-tag**
 
-    .. _authorization:
-
     Example:
 
-    .. literalinclude::
-        /../../tests/properties/fixtures/authorization_matrix.yaml
+    .. literalinclude:: /../../tests/properties/fixtures/authorization.yaml
        :language: yaml
-
     """
 
+    credentials = 'com.cloudbees.plugins.credentials.CredentialsProvider.'
+    ownership = 'com.synopsys.arc.jenkins.plugins.ownership.OwnershipPlugin.'
+
     mapping = {
-        'job-delete': 'hudson.model.Item.Delete',
-        'job-configure': 'hudson.model.Item.Configure',
-        'job-read': 'hudson.model.Item.Read',
-        'job-extended-read': 'hudson.model.Item.ExtendedRead',
-        'job-discover': 'hudson.model.Item.Discover',
+        'credentials-create': ''.join((credentials, 'Create')),
+        'credentials-delete': ''.join((credentials, 'Delete')),
+        'credentials-manage-domains': ''.join((credentials, 'ManageDomains')),
+        'credentials-update': ''.join((credentials, 'Update')),
+        'credentials-view': ''.join((credentials, 'View')),
         'job-build': 'hudson.model.Item.Build',
-        'job-workspace': 'hudson.model.Item.Workspace',
         'job-cancel': 'hudson.model.Item.Cancel',
+        'job-configure': 'hudson.model.Item.Configure',
+        'job-delete': 'hudson.model.Item.Delete',
+        'job-discover': 'hudson.model.Item.Discover',
+        'job-extended-read': 'hudson.model.Item.ExtendedRead',
+        'job-move': 'hudson.model.Item.Move',
+        'job-read': 'hudson.model.Item.Read',
+        'job-status': 'hudson.model.Item.ViewStatus',
+        'job-workspace': 'hudson.model.Item.Workspace',
+        'ownership-jobs': ''.join((ownership, 'Jobs')),
         'run-delete': 'hudson.model.Run.Delete',
         'run-update': 'hudson.model.Run.Update',
-        'scm-tag': 'hudson.scm.SCM.Tag'
+        'scm-tag': 'hudson.scm.SCM.Tag',
     }
 
     if data:
@@ -355,7 +400,10 @@ def authorization(parser, xml_parent, data):
         for (username, perms) in data.items():
             for perm in perms:
                 pe = XML.SubElement(matrix, 'permission')
-                pe.text = "{0}:{1}".format(mapping[perm], username)
+                try:
+                    pe.text = "{0}:{1}".format(mapping[perm], username)
+                except KeyError:
+                    raise InvalidAttributeError(username, perm, mapping.keys())
 
 
 def extended_choice(parser, xml_parent, data):
@@ -393,8 +441,11 @@ def priority_sorter(parser, xml_parent, data):
     priority_sorter_tag = XML.SubElement(xml_parent,
                                          'hudson.queueSorter.'
                                          'PrioritySorterJobProperty')
-    XML.SubElement(priority_sorter_tag, 'priority').text = str(
-        data['priority'])
+    try:
+        XML.SubElement(priority_sorter_tag, 'priority').text = str(
+            data['priority'])
+    except KeyError as e:
+        raise MissingAttributeError(e)
 
 
 def build_blocker(parser, xml_parent, data):
@@ -478,7 +529,8 @@ def copyartifact(parser, xml_parent, data):
         raise JenkinsJobsException("projects string must exist and "
                                    "not be empty")
     projectlist = XML.SubElement(copyartifact, 'projectNameList')
-    XML.SubElement(projectlist, 'string').text = data.get('projects')
+    for project in str(data.get('projects')).split(','):
+        XML.SubElement(projectlist, 'string').text = project
 
 
 def batch_tasks(parser, xml_parent, data):
@@ -622,30 +674,33 @@ def slack(parser, xml_parent, data):
     """yaml: slack
     Requires the Jenkins :jenkins-wiki:`Slack Plugin <Slack+Plugin>`
 
-    As the Slack Plugin itself requires a publisher aswell as properties
-    please note that you have to add the publisher to your job configuration
-    aswell.
+    When using Slack Plugin version < 2.0, Slack Plugin itself requires a
+    publisher aswell as properties please note that you have to add the
+    publisher to your job configuration aswell. When using Slack Plugin
+    version >= 2.0, you should only configure the publisher.
 
     :arg bool notify-start: Send notification when the job starts
-        (default: False)
-    :arg bool notify-success: Send notification on success. (default: False)
+        (default false)
+    :arg bool notify-success: Send notification on success. (default false)
     :arg bool notify-aborted: Send notification when job is aborted. (
-        default: False)
+        default false)
     :arg bool notify-not-built: Send notification when job set to NOT_BUILT
-        status. (default: False)
+        status. (default false)
     :arg bool notify-unstable: Send notification when job becomes unstable.
-        (default: False)
+        (default false)
     :arg bool notify-failure: Send notification when job fails.
-        (default: False)
+        (default false)
     :arg bool notifiy-back-to-normal: Send notification when job is
-        succeeding again after being unstable or failed. (default: False)
-    :arg bool include-test-summary: Include the test summary. (default:
+        succeeding again after being unstable or failed. (default false)
+    :arg bool 'notify-repeated-failure': Send notification when job is
+        still failing after last failure. (default false)
+    :arg bool include-test-summary: Include the test summary. (default
         False)
     :arg bool include-custom-message: Include a custom message into the
-        notification. (default: False)
-    :arg str custom-message: Custom message to be included. (default: '')
+        notification. (default false)
+    :arg str custom-message: Custom message to be included. (default '')
     :arg str room: A comma seperated list of rooms / channels to send
-        the notifications to. (default: '')
+        the notifications to. (default '')
 
     Example:
 
@@ -658,6 +713,16 @@ def slack(parser, xml_parent, data):
             value = str(value).lower()
         XML.SubElement(elem, name).text = value
 
+    logger = logging.getLogger(__name__)
+
+    plugin_info = parser.registry.get_plugin_info('Slack Notification Plugin')
+    plugin_ver = pkg_resources.parse_version(plugin_info.get('version', "0"))
+
+    if plugin_ver >= pkg_resources.parse_version("2.0"):
+        logger.warn(
+            "properties section is not used with plugin version >= 2.0",
+        )
+
     mapping = (
         ('notify-start', 'startNotification', False),
         ('notify-success', 'notifySuccess', False),
@@ -666,6 +731,7 @@ def slack(parser, xml_parent, data):
         ('notify-unstable', 'notifyUnstable', False),
         ('notify-failure', 'notifyFailure', False),
         ('notify-back-to-normal', 'notifyBackToNormal', False),
+        ('notify-repeated-failure', 'notifyRepeatedFailure', False),
         ('include-test-summary', 'includeTestSummary', False),
         ('include-custom-message', 'includeCustomMessage', False),
         ('custom-message', 'customMessage', ''),

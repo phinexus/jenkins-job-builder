@@ -70,6 +70,30 @@ itself (e.g. ``{name}-unit-tests`` in the above example) will be
 substituted in. This is useful in cases where you need to trace a job
 back to its template.
 
+Sometimes it is useful to have the same job name format used even
+where the template contents may vary. `Ids` provide a mechanism to
+support such use cases.
+
+
+Default Values for Template Variables
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+To facilitate reuse of templates with many variables that can be
+substituted, but where in most cases the same or no value is needed,
+it is possible to specify defaults for the variables within the
+templates themselves.
+
+This can be used to provide common settings for particular templates.
+For example:
+
+.. literalinclude::
+    /../../tests/yamlparser/fixtures/template_default_variables.yaml
+   :language: yaml
+
+To use a default value for a variable used in the name would be
+uncommon unless it was in addition to another variable. However you
+can use `Ids`_ simplify such use cases.
+
 .. _project:
 
 Project
@@ -120,6 +144,26 @@ used for its name (thus not a use case for job-specific substitutions),
 additional variables can be specified for project variables. Example:
 
 .. literalinclude::  /../../tests/yamlparser/fixtures/templates002.yaml
+
+You can also specify some variable combinations to exclude from the matrix with
+the ``exclude`` keyword, to avoid generating jobs for those combinations. You
+can specify all the variables of the combination or only a subset, if you
+specify a subset, any value of the omited variable will match:
+
+.. literalinclude:: /../../tests/yamlparser/fixtures/template_exclude.yaml
+
+The above example will omit the jobs:
+
+ * build-axe1val1-axe2val1-axe3val2
+ * build-axe1val1-axe2val2-axe3val1
+ * build-axe1val2-axe2val2-axe3val1
+
+To achieve the same without the ``exclude`` tag one would have to do something
+a bit more complicated, that gets more complicated for each dimension in the
+combination, for the previous example, the counterpart would be:
+
+.. literalinclude::
+    /../../tests/yamlparser/fixtures/template_without_exclude.yaml
 
 Job Group
 ^^^^^^^^^
@@ -261,6 +305,27 @@ least a ``name``).  Thus embedded-shell within a ``job-template`` should
 always use ``{{`` to achieve a literal ``{``.  A generic builder will need
 to consider the correct quoting based on its use of parameters.
 
+
+.. _ids:
+
+Item ID's
+^^^^^^^^^
+
+It's possible to assign an `id` to any of the blocks and then use that
+to reference it instead of the name. This has two primary functions:
+
+* A unique identifier where you wish to use the same naming format for
+  multiple templates. This allows to follow a naming scheme while
+  still using multiple templates to handle subtle variables in job
+  requirements.
+* Provides a simpler name for a `job-template` where you have multiple
+  variables in the name and don't wish to have to include this information
+  in every use. This also allows changing the template output name without
+  impacting references.
+
+Example:
+
+.. literalinclude::  /../../tests/yamlparser/fixtures/template_ids.yaml
 
 .. _raw:
 

@@ -46,6 +46,29 @@ def matches(what, glob_patterns):
                for glob_pattern in glob_patterns)
 
 
+def combination_matches(combination, match_combinations):
+    """
+    Checks if the given combination is matches for any of the given combination
+    globs, being those a set of combinations where if a key is missing, it's
+    considered matching
+
+    (key1=2, key2=3)
+
+    would match the combination match:
+    (key2=3)
+
+    but not:
+    (key1=2, key2=2)
+    """
+    for cmatch in match_combinations:
+        for key, val in combination.items():
+            if cmatch.get(key, val) != val:
+                break
+        else:
+            return True
+    return False
+
+
 class YamlParser(object):
     def __init__(self, config=None, plugins_info=None):
         self.data = {}
@@ -91,11 +114,13 @@ class YamlParser(object):
                     raise JenkinsJobsException("Syntax error, for item "
                                                "named '{0}'. Missing indent?"
                                                .format(n))
-                name = dfn['name']
-                if name in group:
-                    self._handle_dups("Duplicate entry found in '{0}: '{1}' "
-                                      "already defined".format(fp.name, name))
-                group[name] = dfn
+                # allow any entry to specify an id that can also be used
+                id = dfn.get('id', dfn['name'])
+                if id in group:
+                    self._handle_dups(
+                        "Duplicate entry found in '{0}: '{1}' already "
+                        "defined".format(fp.name, id))
+                group[id] = dfn
                 self.data[cls] = group
 
     def parse(self, fn):
@@ -267,6 +292,7 @@ class YamlParser(object):
         # reject keys that are not useful during yaml expansion
         for k in ['jobs']:
             project.pop(k)
+        excludes = project.pop('exclude', [])
         for (k, v) in project.items():
             tmpk = '{{{0}}}'.format(k)
             if tmpk not in template_name:
@@ -293,6 +319,10 @@ class YamlParser(object):
 
             params.update(expanded_values)
             params = deep_format(params, params)
+            if combination_matches(params, excludes):
+                logger.debug('Excluding combination %s', str(params))
+                continue
+
             allow_empty_variables = self.config \
                 and self.config.has_section('job_builder') \
                 and self.config.has_option(

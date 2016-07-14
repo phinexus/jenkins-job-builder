@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<project>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <com.cwctravel.hudson.plugins.extended__choice__parameter.ExtendedChoiceParameterDefinition>
+          <name>OPTIONS</name>
+          <description>Available options</description>
+          <value/>
+          <visibleItemCount>2</visibleItemCount>
+          <multiSelectDelimiter>,</multiSelectDelimiter>
+          <quoteValue>false</quoteValue>
+          <defaultValue>foo</defaultValue>
+          <descriptionPropertyValue>bar1, bar2, bar3</descriptionPropertyValue>
+          <type>PT_SINGLE_SELECT</type>
+          <propertyFile>/home/foo/property.prop</propertyFile>
+          <propertyKey>key</propertyKey>
+          <defaultPropertyFile>/home/property.prop</defaultPropertyFile>
+          <defaultPropertyKey>fookey</defaultPropertyKey>
+          <descriptionPropertyFile>/home/foo/bar.properties</descriptionPropertyFile>
+          <descriptionPropertyKey>bar_desc</descriptionPropertyKey>
+        </com.cwctravel.hudson.plugins.extended__choice__parameter.ExtendedChoiceParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+</project>

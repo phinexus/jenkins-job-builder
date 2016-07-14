@@ -43,6 +43,8 @@ in the :ref:`Job` definition.
       documentation artifact archiving (default true).
     * **automatic-fingerprinting** (`bool`): Activate automatic fingerprinting
       of consumed and produced artifacts (default true).
+    * **per-module-email** (`bool`): Send an e-mail for each failed module
+      (default true).
     * **parallel-build-modules** (`bool`): Build modules in parallel
       (default false)
     * **resolve-dependencies** (`bool`): Resolve Dependencies during Pom
@@ -52,18 +54,22 @@ in the :ref:`Job` definition.
       (default false).
     * **custom-workspace** (`str`): Path to the custom workspace. If no path is
       provided, custom workspace is not used. (optional)
-    * **settings** (`str`): Path to custom maven settings file.
-      It is possible to provide a ConfigFileProvider settings file as well
-      see CFP Example below. (optional)
+    * **settings** (`str`): Path to custom maven settings file. If settings
+      type is 'file' then this is a Path. Otherwise it is the id for
+      ConfigFileProvider. (optional)
+    * **settings-type** (`str`): Type of settings file file|cfp.
+      (default file)
     * **global-settings** (`str`): Path to custom maven global settings file.
-      It is possible to provide a ConfigFileProvider settings file as well
-      see CFP Example below. (optional)
+      If settings type is 'file' then this is a Path. Otherwise it is the id
+      for ConfigFileProvider. (optional)
+    * **global-settings-type** (`str`): Type of settings file file|cfp.
+      (default file)
     * **post-step-run-condition** (`str`): Run the post-build steps only if the
       build succeeds ('SUCCESS'), build succeeds or is unstable ('UNSTABLE'),
       regardless of build result ('FAILURE'). (default 'FAILURE').
 
-Requires the Jenkins `Config File Provider Plugin
-<https://wiki.jenkins-ci.org/display/JENKINS/Config+File+Provider+Plugin>`_
+Requires the Jenkins :jenkins-wiki:`Config File Provider Plugin
+<Config+File+Provider+Plugin>`
 for the Config File Provider "settings" and "global-settings" config.
 
 Example:
@@ -74,7 +80,7 @@ CFP Example:
 
     .. literalinclude:: /../../tests/general/fixtures/project-maven003.yaml
 """
-
+import pkg_resources
 import xml.etree.ElementTree as XML
 
 from jenkins_jobs.errors import InvalidAttributeError
@@ -99,6 +105,11 @@ class Maven(jenkins_jobs.modules.base.Base):
         xml_parent = XML.Element('maven2-moduleset')
         if 'maven' not in data:
             return xml_parent
+
+        # determine version of plugin
+        plugin_info = self.registry.get_plugin_info("Maven Integration plugin")
+        version = pkg_resources.parse_version(plugin_info.get('version', '0'))
+
         if 'root-module' in data['maven']:
             root_module = XML.SubElement(xml_parent, 'rootModule')
             XML.SubElement(root_module, 'groupId').text = \
@@ -140,7 +151,10 @@ class Maven(jenkins_jobs.modules.base.Base):
             not data['maven'].get('automatic-site-archiving', True)).lower()
         XML.SubElement(xml_parent, 'fingerprintingDisabled').text = str(
             not data['maven'].get('automatic-fingerprinting', True)).lower()
-        XML.SubElement(xml_parent, 'perModuleEmail').text = 'true'
+        if (version > pkg_resources.parse_version('0') and
+                version < pkg_resources.parse_version('2.0.1')):
+            XML.SubElement(xml_parent, 'perModuleEmail').text = str(
+                data.get('per-module-email', True)).lower()
         XML.SubElement(xml_parent, 'archivingDisabled').text = str(
             not data['maven'].get('automatic-archiving', True)).lower()
         XML.SubElement(xml_parent, 'resolveDependencies').text = str(

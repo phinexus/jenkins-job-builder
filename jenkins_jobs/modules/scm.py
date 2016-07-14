@@ -70,26 +70,11 @@ def git(parser, xml_parent, data):
               code) visible after you clicked credential under Jenkins Global
               credentials. (optional)
     :arg list(str) branches: list of branch specifiers to build (default '**')
-    :arg list(str) excluded-users: list of users to ignore revisions from
-        when polling for changes. (if polling is enabled, optional)
-    :arg list(str) included-regions: list of file/folders to include (optional)
-    :arg list(str) excluded-regions: list of file/folders to exclude (optional)
-    :arg str local-branch: Checkout/merge to local branch (optional)
-    :arg dict merge:
-        :merge:
-            * **remote** (`string`) - name of repo that contains branch to
-              merge to (default 'origin')
-            * **branch** (`string`) - name of the branch to merge to
-            * **strategy** (`string`) - merge strategy. Can be one of
-              'default', 'resolve', 'recursive', 'octopus', 'ours',
-              'subtree'. (default 'default')
-            * **fast-forward-mode** (`string`) - merge fast-forward mode.
-              Can be one of 'FF', 'FF_ONLY' or 'NO_FF'. (default 'FF')
-    :arg str basedir: location relative to the workspace root to clone to
-        (default workspace)
-    :arg bool skip-tag: Skip tagging (default false)
-    :arg bool shallow-clone: Perform shallow clone (default false)
-    :arg bool prune: Prune remote branches (default false)
+    :arg bool skip-tag: Skip tagging (default true)
+
+        .. deprecated:: 1.6.0. Please use per-build-tag extension, which has
+           the inverse meaning.
+
     :arg bool clean: Clean after checkout (default false)
 
         .. deprecated:: 1.1.1. Please use clean extension format.
@@ -104,21 +89,17 @@ def git(parser, xml_parent, data):
 
         .. deprecated:: 1.1.1. Please use submodule extension.
 
-    :arg bool use-author: Use author rather than committer in Jenkin's build
-        changeset (default false)
     :arg str git-tool: The name of the Git installation to use (default
         'Default')
     :arg str reference-repo: Path of the reference repo to use during clone
         (optional)
-    :arg str scm-name: The unique scm name for this Git SCM (optional)
-    :arg bool ignore-notify: Ignore notifyCommit URL accesses (default false)
     :arg str browser: what repository browser to use.
 
         :browsers supported:
             * **auto** - (default)
-            * **assemblaweb** - https://www.assembla.com/
-            * **bitbucketweb** - https://www.bitbucket.org/
-            * **cgit** - http://git.zx2c4.com/cgit/about/
+            * **assemblaweb** - https://www.assembla.com/home
+            * **bitbucketweb** - https://bitbucket.org/
+            * **cgit** - https://git.zx2c4.com/cgit/about/
             * **fisheye** - https://www.atlassian.com/software/fisheye
             * **gitblit** - http://gitblit.com/
             * **githubweb** - https://github.com/
@@ -126,13 +107,13 @@ def git(parser, xml_parent, data):
             * **gitlab** - https://about.gitlab.com/
             * **gitlist** - http://gitlist.org/
             * **gitoriousweb** - https://gitorious.org/
-            * **gitweb** - http://git-scm.com/docs/gitweb
+            * **gitweb** - https://git-scm.com/docs/gitweb
             * **kiln** - https://www.fogcreek.com/kiln/
             * **microsoft\-tfs\-2013** - |tfs_2013|
             * **phabricator** - http://phabricator.org/
             * **redmineweb** - http://www.redmine.org/
             * **rhodecode** - https://rhodecode.com/
-            * **stash** - https://www.atlassian.com/software/stash
+            * **stash** - https://www.atlassian.com/software/bitbucket/server
             * **viewgit** - http://viewgit.fealdia.org/
     :arg str browser-url: url for the repository browser (required if browser
         is not 'auto', no default)
@@ -141,25 +122,54 @@ def git(parser, xml_parent, data):
     :arg str project-name: project name in Gitblit and ViewGit repobrowser
         (optional)
     :arg str repo-name: repository name in phabricator repobrowser (optional)
-    :arg str choosing-strategy: Jenkins class for selecting what to build.
-        Can be one of `default`, `inverse`, or `gerrit` (default 'default')
     :arg str git-config-name: Configure name for Git clone (optional)
     :arg str git-config-email: Configure email for Git clone (optional)
 
     :extensions:
 
+        * **basedir** (`string`) - Location relative to the workspace root to
+            clone to (default workspace)
         * **changelog-against** (`dict`)
             * **remote** (`string`) - name of repo that contains branch to
               create changelog against (default 'origin')
             * **branch** (`string`) - name of the branch to create changelog
               against (default 'master')
+        * **choosing-strategy**: (`string`) - Jenkins class for selecting what
+            to build. Can be one of `default`,`inverse`, or `gerrit`
+            (default 'default')
         * **clean** (`dict`)
             * **after** (`bool`) - Clean the workspace after checkout
             * **before** (`bool`) - Clean the workspace before checkout
+        * **excluded-users**: (`list(string)`) - list of users to ignore
+            revisions from when polling for changes.
+            (if polling is enabled, optional)
+        * **included-regions**: (`list(string)`) - list of file/folders to
+            include (optional)
+        * **excluded-regions**: (`list(string)`) - list of file/folders to
+            exclude (optional)
         * **ignore-commits-with-messages** (`list(str)`) - Revisions committed
-          with messages matching these patterns will be ignored. (optional)
+            with messages matching these patterns will be ignored. (optional)
+        * **ignore-notify**: (`bool`) - Ignore notifyCommit URL accesses
+            (default false)
         * **force-polling-using-workspace** (`bool`) - Force polling using
-          workspace (default false)
+            workspace (default false)
+        * **local-branch** (`string`) - Checkout/merge to local branch
+            (optional)
+        * **merge** (`dict`)
+            * **remote** (`string`) - name of repo that contains branch to
+              merge to (default 'origin')
+            * **branch** (`string`) - name of the branch to merge to
+            * **strategy** (`string`) - merge strategy. Can be one of
+              'default', 'resolve', 'recursive', 'octopus', 'ours',
+              'subtree'. (default 'default')
+            * **fast-forward-mode** (`string`) - merge fast-forward mode.
+              Can be one of 'FF', 'FF_ONLY' or 'NO_FF'. (default 'FF')
+        * **per-build-tag** (`bool`) - Create a tag in the workspace for every
+            build. (default is inverse of skip-tag if set, otherwise false)
+        * **prune** (`bool`) - Prune remote branches (default false)
+        * **scm-name** (`string`) - The unique scm name for this Git SCM
+            (optional)
+        * **shallow-clone** (`bool`) - Perform shallow clone (default false)
         * **sparse-checkout** (`dict`)
             * **paths** (`list`) - List of paths to sparse checkout. (optional)
         * **submodule** (`dict`)
@@ -174,8 +184,10 @@ def git(parser, xml_parent, data):
             * **reference-repo** (`str`) - Path of the reference repo to use
               during clone (optional)
             * **timeout** (`int`) - Specify a timeout (in minutes) for
-              submodules operations (default: 10).
+              submodules operations (default 10).
         * **timeout** (`str`) - Timeout for git commands in minutes (optional)
+        * **use-author** (`bool`): Use author rather than committer in Jenkin's
+            build changeset (default false)
         * **wipe-workspace** (`bool`) - Wipe out workspace before build
             (default true)
 
@@ -197,20 +209,14 @@ def git(parser, xml_parent, data):
         ("disable-submodules", 'disableSubmodules', False),
         ("recursive-submodules", 'recursiveSubmodules', False),
         (None, 'doGenerateSubmoduleConfigurations', False),
-        ("use-author", 'authorOrCommitter', False),
-        ("wipe-workspace", 'wipeOutWorkspace', True),
-        ("prune", 'pruneBranches', False),
+        # XXX is this the same as force-polling-using-workspace?
         ("fastpoll", 'remotePoll', False),
+        # XXX does this option still exist?
         ("git-tool", 'gitTool', "Default"),
         (None, 'submoduleCfg', '', {'class': 'list'}),
-        ('basedir', 'relativeTargetDir', ''),
         ('reference-repo', 'reference', ''),
         ("git-config-name", 'gitConfigName', ''),
         ("git-config-email", 'gitConfigEmail', ''),
-        ('skip-tag', 'skipTag', False),
-        ('scm-name', 'scmName', ''),
-        ("shallow-clone", "useShallowClone", False),
-        ("ignore-notify", "ignoreNotifyCommit", False),
     ]
 
     choosing_strategies = {
@@ -250,36 +256,6 @@ def git(parser, xml_parent, data):
     for branch in branches:
         bspec = XML.SubElement(xml_branches, 'hudson.plugins.git.BranchSpec')
         XML.SubElement(bspec, 'name').text = branch
-    excluded_users = '\n'.join(data.get('excluded-users', []))
-    XML.SubElement(scm, 'excludedUsers').text = excluded_users
-    if 'merge' in data:
-        merge = data['merge']
-        merge_strategies = ['default', 'resolve', 'recursive', 'octopus',
-                            'ours', 'subtree']
-        fast_forward_modes = ['FF', 'FF_ONLY', 'NO_FF']
-        name = merge.get('remote', 'origin')
-        branch = merge['branch']
-        urc = XML.SubElement(scm, 'userMergeOptions')
-        XML.SubElement(urc, 'mergeRemote').text = name
-        XML.SubElement(urc, 'mergeTarget').text = branch
-        strategy = merge.get('strategy', 'default')
-        if strategy not in merge_strategies:
-            raise InvalidAttributeError('strategy', strategy, merge_strategies)
-        XML.SubElement(urc, 'mergeStrategy').text = strategy
-        fast_forward_mode = merge.get('fast-forward-mode', 'FF')
-        if fast_forward_mode not in fast_forward_modes:
-            raise InvalidAttributeError('fast-forward-mode', fast_forward_mode,
-                                        fast_forward_modes)
-        XML.SubElement(urc, 'fastForwardMode').text = fast_forward_mode
-
-    try:
-        choosing_strategy = choosing_strategies[data.get('choosing-strategy',
-                                                         'default')]
-    except KeyError:
-        raise ValueError('Invalid choosing-strategy %r' %
-                         data.get('choosing-strategy'))
-    XML.SubElement(scm, 'buildChooser', {'class': choosing_strategy})
-
     for elem in mapping:
         (optname, xmlname, val) = elem[:3]
 
@@ -306,21 +282,13 @@ def git(parser, xml_parent, data):
         else:
             xe.text = val
 
-    if 'local-branch' in data:
-        XML.SubElement(scm, 'localBranch').text = data['local-branch']
-
     exts_node = XML.SubElement(scm, 'extensions')
     impl_prefix = 'hudson.plugins.git.extensions.impl.'
-    if 'included-regions' in data or 'excluded-regions' in data:
-        ext_name = XML.SubElement(exts_node,
-                                  'hudson.plugins.git.extensions.impl.'
-                                  'PathRestriction')
-        if 'included-regions' in data:
-            include_string = '\n'.join(data['included-regions'])
-            XML.SubElement(ext_name, 'includedRegions').text = include_string
-        if 'excluded-regions' in data:
-            exclude_string = '\n'.join(data['excluded-regions'])
-            XML.SubElement(ext_name, 'excludedRegions').text = exclude_string
+
+    if 'basedir' in data:
+        ext = XML.SubElement(exts_node,
+                             impl_prefix + 'RelativeTargetDirectory')
+        XML.SubElement(ext, 'relativeTargetDir').text = data['basedir']
     if 'changelog-against' in data:
         ext_name = impl_prefix + 'ChangelogToBranch'
         ext = XML.SubElement(exts_node, ext_name)
@@ -329,6 +297,15 @@ def git(parser, xml_parent, data):
         change_branch = data['changelog-against'].get('branch', 'master')
         XML.SubElement(opts, 'compareRemote').text = change_remote
         XML.SubElement(opts, 'compareTarget').text = change_branch
+    if 'choosing-strategy' in data:
+        try:
+            choosing_strategy = choosing_strategies[
+                data.get('choosing-strategy')]
+        except KeyError:
+            raise ValueError('Invalid choosing-strategy %r' %
+                             data.get('choosing-strategy'))
+        ext = XML.SubElement(exts_node, impl_prefix + 'BuildChooserSetting')
+        XML.SubElement(ext, 'buildChooser', {'class': choosing_strategy})
     if 'clean' in data:
         # Keep support for old format 'clean' configuration by checking
         # if 'clean' is boolean. Else we're using the new extensions style.
@@ -347,11 +324,57 @@ def git(parser, xml_parent, data):
         if clean_before:
             ext_name = impl_prefix + 'CleanBeforeCheckout'
             ext = XML.SubElement(exts_node, ext_name)
+    if 'excluded-users' in data:
+        excluded_users = '\n'.join(data['excluded-users'])
+        ext = XML.SubElement(exts_node, impl_prefix + 'UserExclusion')
+        XML.SubElement(ext, 'excludedUsers').text = excluded_users
+    if 'included-regions' in data or 'excluded-regions' in data:
+        ext = XML.SubElement(exts_node,
+                             'hudson.plugins.git.extensions.impl.'
+                             'PathRestriction')
+        if 'included-regions' in data:
+            include_string = '\n'.join(data['included-regions'])
+            XML.SubElement(ext, 'includedRegions').text = include_string
+        if 'excluded-regions' in data:
+            exclude_string = '\n'.join(data['excluded-regions'])
+            XML.SubElement(ext, 'excludedRegions').text = exclude_string
     if 'ignore-commits-with-messages' in data:
         for msg in data['ignore-commits-with-messages']:
             ext_name = impl_prefix + 'MessageExclusion'
             ext = XML.SubElement(exts_node, ext_name)
             XML.SubElement(ext, 'excludedMessage').text = msg
+    if 'local-branch' in data:
+        ext = XML.SubElement(exts_node, impl_prefix + 'LocalBranch')
+        XML.SubElement(ext, 'localBranch').text = str(data['local-branch'])
+    if 'merge' in data:
+        merge = data['merge']
+        merge_strategies = ['default', 'resolve', 'recursive', 'octopus',
+                            'ours', 'subtree']
+        fast_forward_modes = ['FF', 'FF_ONLY', 'NO_FF']
+        name = merge.get('remote', 'origin')
+        branch = merge['branch']
+        ext = XML.SubElement(exts_node, impl_prefix + 'PreBuildMerge')
+        merge_opts = XML.SubElement(ext, 'options')
+        XML.SubElement(merge_opts, 'mergeRemote').text = name
+        XML.SubElement(merge_opts, 'mergeTarget').text = branch
+        strategy = merge.get('strategy', 'default')
+        if strategy not in merge_strategies:
+            raise InvalidAttributeError('strategy', strategy, merge_strategies)
+        XML.SubElement(merge_opts, 'mergeStrategy').text = strategy
+        fast_forward_mode = merge.get('fast-forward-mode', 'FF')
+        if fast_forward_mode not in fast_forward_modes:
+            raise InvalidAttributeError('fast-forward-mode', fast_forward_mode,
+                                        fast_forward_modes)
+        XML.SubElement(merge_opts, 'fastForwardMode').text = fast_forward_mode
+    if 'scm-name' in data:
+        ext = XML.SubElement(exts_node, impl_prefix + 'ScmName')
+        XML.SubElement(ext, 'name').text = str(data['scm-name'])
+    if 'shallow-clone' in data or 'timeout' in data:
+        clo = XML.SubElement(exts_node, impl_prefix + 'CloneOption')
+        XML.SubElement(clo, 'shallow').text = str(
+            data.get('shallow-clone', False)).lower()
+        if 'timeout' in data:
+            XML.SubElement(clo, 'timeout').text = str(data['timeout'])
     if 'sparse-checkout' in data:
         ext_name = impl_prefix + 'SparseCheckoutPaths'
         ext = XML.SubElement(exts_node, ext_name)
@@ -378,18 +401,39 @@ def git(parser, xml_parent, data):
     if 'timeout' in data:
         co = XML.SubElement(exts_node, impl_prefix + 'CheckoutOption')
         XML.SubElement(co, 'timeout').text = str(data['timeout'])
-        clo = XML.SubElement(exts_node, impl_prefix + 'CloneOption')
-        XML.SubElement(clo, 'timeout').text = str(data['timeout'])
+
     polling_using_workspace = str(data.get('force-polling-using-workspace',
                                            False)).lower()
     if polling_using_workspace == 'true':
         ext_name = impl_prefix + 'DisableRemotePoll'
         ext = XML.SubElement(exts_node, ext_name)
+    if 'per-build-tag' in data or 'skip-tag' in data:
+        # We want to support both skip-tag (the old option) and per-build-tag
+        # (the new option), with the new one overriding the old one.
+        # Unfortunately they have inverse meanings, so we have to be careful.
+        # The default value of per-build-tag is False if skip-tag is not set,
+        # so we set the default value of skip-tag to True.
+        per_build_tag_default = False
+        if str(data.get('skip-tag', True)).lower == 'false':
+            per_build_tag_default = True
+        if str(data.get('per-build-tag',
+                        per_build_tag_default)).lower() == 'true':
+            XML.SubElement(exts_node, impl_prefix + 'PerBuildTag')
+    prune = str(data.get('prune', False)).lower()
+    if prune == 'true':
+        XML.SubElement(exts_node, impl_prefix + 'PruneStaleBranch')
+    ignore_notify_commits = str(data.get('ignore-notify', False)).lower()
+    if ignore_notify_commits == 'true':
+        XML.SubElement(exts_node, impl_prefix + 'IgnoreNotifyCommit')
     # By default we wipe the workspace
     wipe_workspace = str(data.get('wipe-workspace', True)).lower()
     if wipe_workspace == 'true':
         ext_name = impl_prefix + 'WipeWorkspace'
         ext = XML.SubElement(exts_node, ext_name)
+
+    use_author = str(data.get('use-author', False)).lower()
+    if use_author == 'true':
+        XML.SubElement(exts_node, impl_prefix + 'AuthorInChangelog')
 
     browser = data.get('browser', 'auto')
     browserdict = {'auto': 'auto',
@@ -946,7 +990,7 @@ def workspace(parser, xml_parent, data):
         workspace from.
     :arg str criteria: Set the criteria to determine what build of the parent
         project to use. Can be one of 'Any', 'Not Failed' or 'Successful'.
-        (default: Any)
+        (default Any)
 
 
     Example:
@@ -994,7 +1038,7 @@ def hg(self, xml_parent, data):
 
         :browsers supported:
             * **auto** - (default)
-            * **bitbucketweb** - https://www.bitbucket.org/
+            * **bitbucketweb** - https://bitbucket.org/
             * **fisheye** - https://www.atlassian.com/software/fisheye
             * **googlecode** - https://code.google.com/
             * **hgweb** - https://www.selenic.com/hg/help/hgweb
@@ -1086,15 +1130,15 @@ def openshift_img_streams(parser, xml_parent, data):
 
     :arg str image-stream-name: The name of the ImageStream is what shows up
         in the NAME column if you dump all the ImageStream's with the
-        `oc get is` command invocation. (default: nodejs-010-centos7)
+        `oc get is` command invocation. (default nodejs-010-centos7)
     :arg str tag: The specific image tag within the ImageStream to monitor.
-        (default: latest)
+        (default latest)
     :arg str api-url: This would be the value you specify if you leverage the
         --server option on the OpenShift `oc` command.
-        (default: \https://openshift.default.svc.cluster.local\)
+        (default \https://openshift.default.svc.cluster.local\)
     :arg str namespace: The value here should be whatever was the output
         form `oc project` when you created the BuildConfig you want to run
-        a Build on. (default: test)
+        a Build on. (default test)
     :arg str auth-token: The value here is what you supply with the --token
         option when invoking the OpenShift `oc` command. (optional)
     :arg str verbose: This flag is the toggle for
@@ -1136,9 +1180,9 @@ def bzr(parser, xml_parent, data):
 
     :arg str url: URL of the bzr branch
     :arg bool clean-tree: Clean up the workspace (using bzr) before pulling
-        the branch (default: false)
+        the branch (default false)
     :arg bool lightweight-checkout: Use a lightweight checkout instead of a
-        full branch (default: false)
+        full branch (default false)
     :arg str browser: The repository browser to use.
 
         :browsers supported:
@@ -1189,6 +1233,38 @@ def bzr(parser, xml_parent, data):
             data['opengrok-root-module'])
 
 
+def url(parser, xml_parent, data):
+    """yaml: url
+
+    Watch for changes in, and download an artifact from a particular url.
+    Requires the Jenkins :jenkins-wiki:`URL SCM <URL+SCM>`.
+
+    :arg list url-list: List of URLs to watch. (required)
+    :arg bool clear-workspace: If set to true, clear the workspace before
+        downloading the artifact(s) specified in url-list. (default false)
+
+    Examples:
+
+    .. literalinclude:: ../../tests/scm/fixtures/url001.yaml
+       :language: yaml
+    .. literalinclude:: ../../tests/scm/fixtures/url002.yaml
+       :language: yaml
+    """
+
+    scm = XML.SubElement(xml_parent, 'scm', {'class':
+                         'hudson.plugins.URLSCM.URLSCM'})
+    urls = XML.SubElement(scm, 'urls')
+    try:
+        for data_url in data['url-list']:
+            url_tuple = XML.SubElement(
+                urls, 'hudson.plugins.URLSCM.URLSCM_-URLTuple')
+            XML.SubElement(url_tuple, 'urlString').text = data_url
+    except KeyError as e:
+        raise MissingAttributeError(e.args[0])
+    XML.SubElement(scm, 'clearWorkspace').text = str(
+        data.get('clear-workspace', False)).lower()
+
+
 class SCM(jenkins_jobs.modules.base.Base):
     sequence = 30
 
@@ -1208,4 +1284,12 @@ class SCM(jenkins_jobs.modules.base.Base):
             class_name = 'org.jenkinsci.plugins.multiplescms.MultiSCM'
             xml_attribs = {'class': class_name}
             xml_parent = XML.SubElement(xml_parent, 'scm', xml_attribs)
+
+            for scms_child in scms_parent:
+                try:
+                    scms_child.tag = scms_child.attrib['class']
+                    del(scms_child.attrib['class'])
+                except KeyError:
+                    pass
+
             xml_parent.append(scms_parent)

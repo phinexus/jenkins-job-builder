@@ -23,6 +23,7 @@ import operator
 import os
 from pprint import pformat
 import re
+import tempfile
 import time
 import xml.etree.ElementTree as XML
 import yaml
@@ -45,8 +46,10 @@ class CacheStorage(object):
     # modules so that they are available to be used when the destructor
     # is being called since python will not guarantee that it won't have
     # removed global module references during teardown.
-    _yaml = yaml
     _logger = logger
+    _os = os
+    _tempfile = tempfile
+    _yaml = yaml
 
     def __init__(self, jenkins_url, flush=False):
         cache_dir = self.get_cache_dir()
@@ -97,23 +100,35 @@ class CacheStorage(object):
         return True
 
     def save(self):
-        # check we initialized sufficiently in case called via __del__
+        # use self references to required modules in case called via __del__
+        # write to tempfile under same directory and then replace to avoid
+        # issues around corruption such the process be killed
+        tfile = self._tempfile.NamedTemporaryFile(dir=self.get_cache_dir(),
+                                                  delete=False)
+        tfile.write(self._yaml.dump(self.data).encode('utf-8'))
+        # force contents to be synced on disk before overwriting cachefile
+        tfile.flush()
+        self._os.fsync(tfile.fileno())
+        tfile.close()
+        try:
+            self._os.rename(tfile.name, self.cachefilename)
+        except OSError:
+            # On Windows, if dst already exists, OSError will be raised even if
+            # it is a file. Remove the file first in that case and try again.
+            self._os.remove(self.cachefilename)
+            self._os.rename(tfile.name, self.cachefilename)
+
+        self._logger.debug("Cache written out to '%s'" % self.cachefilename)
+
+    def __del__(self):
+        # check we initialized sufficiently in case called
         # due to an exception occurring in the __init__
         if getattr(self, 'data', None) is not None:
             try:
-                with io.open(self.cachefilename, 'w',
-                             encoding='utf-8') as yfile:
-                    self._yaml.dump(self.data, yfile)
+                self.save()
             except Exception as e:
                 self._logger.error("Failed to write to cache file '%s' on "
                                    "exit: %s" % (self.cachefilename, e))
-            else:
-                self._logger.info("Cache saved")
-                self._logger.debug("Cache written out to '%s'" %
-                                   self.cachefilename)
-
-    def __del__(self):
-        self.save()
 
 
 class Jenkins(object):
@@ -158,7 +173,7 @@ class Jenkins(object):
 
     def get_job_md5(self, job_name):
         xml = self.jenkins.get_job_config(job_name)
-        return hashlib.md5(xml).hexdigest()
+        return hashlib.md5(xml.encode('utf-8')).hexdigest()
 
     def delete_job(self, job_name):
         if self.is_job(job_name):
@@ -350,12 +365,15 @@ class Builder(object):
                     raise
 
         if output:
+            # ensure only wrapped once
+            if hasattr(output, 'write'):
+                output = utils.wrap_stream(output)
+
             for job in self.parser.xml_jobs:
                 if hasattr(output, 'write'):
                     # `output` is a file-like object
                     logger.info("Job name:  %s", job.name)
                     logger.debug("Writing XML to '{0}'".format(output))
-                    output = utils.wrap_stream(output)
                     try:
                         output.write(job.output())
                     except IOError as exc:

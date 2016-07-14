@@ -43,6 +43,117 @@ logger = logging.getLogger(__name__)
 MIN_TO_SEC = 60
 
 
+def docker_custom_build_env(parser, xml_parent, data):
+    """yaml: docker-custom-build-env
+    Allows the definition of a build environment for a job using a Docker
+    container.
+    Requires the Jenkins :jenkins-wiki:`CloudBees Docker Custom Build
+    Environment Plugin<CloudBees+Docker+Custom+Build+Environment+Plugin>`.
+
+    :arg str image-type: Docker image type. Valid values and their
+        additional attributes described in the image_types_ table
+    :arg str docker-tool: The name of the docker installation to use
+        (default 'Default')
+    :arg str host: URI to the docker host you are using
+    :arg str credentials-id: Argument to specify the ID of credentials to use
+        for docker host (optional)
+    :arg str registry-credentials-id: Argument to specify the ID of
+        credentials to use for docker registry (optional)
+    :arg list volumes: Volumes to bind mound from slave host into container
+
+        :volume: * **host-path** (`str`) Path on host
+                 * **path** (`str`) Path inside container
+
+    :arg bool verbose: Log docker commands executed by plugin on build log
+        (default false)
+    :arg bool privileged: Run in privileged mode (default false)
+    :arg bool force-pull: Force pull (default false)
+    :arg str group: The user to run build has to be the same as the Jenkins
+        slave user so files created in workspace have adequate owner and
+        permission set
+    :arg str command: Container start command (default '/bin/cat')
+    :arg str net: Network bridge (default 'bridge')
+
+    .. _image_types:
+
+    ================== ====================================================
+    Image Type         Description
+    ================== ====================================================
+    dockerfile         Build docker image from a Dockerfile in project
+                       workspace. With this option, project can define the
+                       build environment as a Dockerfile stored in SCM with
+                       project source code
+
+                         :context-path: (str) Path to docker context
+                           (default '.')
+                         :dockerfile: (str) Use an alternate Dockerfile to
+                           build the container hosting this build
+                           (default 'Dockerfile')
+    pull               Pull specified docker image from Docker repository
+
+                         :image: (str) Image id/tag
+    ================== ====================================================
+
+    Example:
+
+    .. literalinclude::
+        /../../tests/wrappers/fixtures/docker-custom-build-env001.yaml
+       :language: yaml
+    """
+    core_prefix = 'com.cloudbees.jenkins.plugins.okidocki.'
+    entry_xml = XML.SubElement(
+        xml_parent, core_prefix + 'DockerBuildWrapper')
+    entry_xml.set('plugin', 'docker-custom-build-environment')
+
+    selectorobj = XML.SubElement(entry_xml, 'selector')
+    image_type = data['image-type']
+    if image_type == 'dockerfile':
+        selectorobj.set('class', core_prefix + 'DockerfileImageSelector')
+        XML.SubElement(selectorobj, 'contextPath').text = data.get(
+            'context-path', '.')
+        XML.SubElement(selectorobj, 'dockerfile').text = data.get(
+            'dockerfile', 'Dockerfile')
+    elif image_type == 'pull':
+        selectorobj.set('class', core_prefix + 'PullDockerImageSelector')
+        XML.SubElement(selectorobj, 'image').text = data.get(
+            'image', '')
+
+    XML.SubElement(entry_xml, 'dockerInstallation').text = data.get(
+        'docker-tool', 'Default')
+
+    host = XML.SubElement(entry_xml, 'dockerHost')
+    host.set('plugin', 'docker-commons')
+    if data.get('host'):
+        XML.SubElement(host, 'uri').text = data['host']
+    if data.get('credentials-id'):
+        XML.SubElement(host, 'credentialsId').text = data['credentials-id']
+    XML.SubElement(entry_xml, 'dockerRegistryCredentials').text = data.get(
+        'registry-credentials-id', '')
+
+    volumesobj = XML.SubElement(entry_xml, 'volumes')
+    volumes = data.get('volumes', [])
+    if not volumes:
+        volumesobj.set('class', 'empty-list')
+    else:
+        for volume in volumes:
+            volumeobj = XML.SubElement(
+                volumesobj, 'com.cloudbees.jenkins.plugins.okidocki.Volume')
+            XML.SubElement(volumeobj, 'hostPath').text = volume['volume'].get(
+                'host-path', '')
+            XML.SubElement(volumeobj, 'path').text = volume['volume'].get(
+                'path', '')
+
+    XML.SubElement(entry_xml, 'forcePull').text = str(data.get(
+        'force-pull', False)).lower()
+    XML.SubElement(entry_xml, 'privileged').text = str(data.get(
+        'privileged', False)).lower()
+    XML.SubElement(entry_xml, 'verbose').text = str(data.get(
+        'verbose', False)).lower()
+    XML.SubElement(entry_xml, 'group').text = data.get('group', '')
+    XML.SubElement(entry_xml, 'command').text = data.get('command', '/bin/cat')
+    XML.SubElement(entry_xml, 'net').text = data.get('net', 'bridge')
+
+
 def ci_skip(parser, xml_parent, data):
     """yaml: ci-skip
     Skip making a build for certain push.
@@ -84,9 +195,9 @@ def config_file_provider(parser, xml_parent, data):
       :files: * **file-id** (`str`) -- The identifier for the managed config
                 file
               * **target** (`str`) -- Define where the file should be created
-                (optional)
+                (default '')
               * **variable** (`str`) -- Define an environment variable to be
-                used (optional)
+                used (default '')
 
     Example:
 
@@ -154,6 +265,7 @@ def timeout(parser, xml_parent, data):
         * **no-activity**
         * **elastic**
         * **absolute**
+        * **deadline**
 
     :arg int elastic-percentage: Percentage of the three most recent builds
         where to declare a timeout, only applies to **elastic** type.
@@ -162,6 +274,12 @@ def timeout(parser, xml_parent, data):
         average duration, only applies to **elastic** type. (default 3)
     :arg int elastic-default-timeout: Timeout to use if there were no previous
         builds, only applies to **elastic** type. (default 3)
+
+    :arg str deadline-time: Build terminate automatically at next deadline time
+        (HH:MM:SS), only applies to **deadline** type. (default 0:00:00)
+    :arg int deadline-tolerance: Period in minutes after deadline when a job
+        should be immediately aborted, only applies to **deadline** type.
+        (default 1)
 
     Example (Version < 1.14):
 
@@ -185,6 +303,9 @@ def timeout(parser, xml_parent, data):
     .. literalinclude::
         /../../tests/wrappers/fixtures/timeout/version-1.14/elastic001.yaml
 
+    .. literalinclude::
+        /../../tests/wrappers/fixtures/timeout/version-1.15/deadline001.yaml
+
     """
     prefix = 'hudson.plugins.build__timeout.'
     twrapper = XML.SubElement(xml_parent, prefix + 'BuildTimeoutWrapper')
@@ -193,7 +314,8 @@ def timeout(parser, xml_parent, data):
         "Jenkins build timeout plugin")
     version = pkg_resources.parse_version(plugin_info.get("version", "0"))
 
-    valid_strategies = ['absolute', 'no-activity', 'likely-stuck', 'elastic']
+    valid_strategies = ['absolute', 'no-activity', 'likely-stuck', 'elastic',
+                        'deadline']
 
     if version >= pkg_resources.parse_version("1.14"):
         strategy = data.get('type', 'absolute')
@@ -233,6 +355,18 @@ def timeout(parser, xml_parent, data):
                            ).text = str(data.get('elastic-number-builds', 0))
             XML.SubElement(strategy_element, 'timeoutMinutesElasticDefault'
                            ).text = str(data.get('elastic-default-timeout', 3))
+
+        elif strategy == "deadline":
+            strategy_element = XML.SubElement(
+                twrapper, 'strategy',
+                {'class': "hudson.plugins.build_timeout."
+                          "impl.DeadlineTimeOutStrategy"})
+            deadline_time = str(data.get('deadline-time', '0:00:00'))
+            XML.SubElement(strategy_element,
+                           'deadlineTime').text = str(deadline_time)
+            deadline_tolerance = int(data.get('deadline-tolerance', 1))
+            XML.SubElement(strategy_element, 'deadlineToleranceInMinutes'
+                           ).text = str(deadline_tolerance)
 
         actions = []
 
@@ -332,6 +466,79 @@ def ansicolor(parser, xml_parent, data):
         XML.SubElement(cwrapper, 'colorMapName').text = colormap
 
 
+def build_keeper(parser, xml_parent, data):
+    """yaml: build-keeper
+    Keep builds based on specific policy.
+    Requires the Jenkins :jenkins-wiki:`Build Keeper Plugin
+    <Build+Keeper+Plugin>`.
+
+    :arg str policy: Policy to keep builds.
+
+        :policy values:
+          * **by-day**
+          * **keep-since**
+          * **build-number**
+          * **keep-first-failed**
+    :arg int build-period: Number argument to calculate build to keep,
+        depends on the policy. (default 0)
+    :arg bool dont-keep-failed: Flag to indicate if to keep failed builds.
+        (default false)
+    :arg int number-of-fails: number of consecutive failed builds in order
+        to mark first as keep forever, only applies to keep-first-failed
+        policy (default 0)
+
+    Example:
+
+    .. literalinclude:: /../../tests/wrappers/fixtures/build-keeper0001.yaml
+
+    .. literalinclude:: /../../tests/wrappers/fixtures/build-keeper0002.yaml
+
+    """
+
+    root = XML.SubElement(xml_parent,
+                          'org.jenkins__ci.plugins.build__keeper.BuildKeeper')
+
+    valid_policies = ('by-day', 'keep-since', 'build-number',
+                      'keep-first-failed')
+    policy = data.get('policy')
+    build_period = str(data.get('build-period', 0))
+    dont_keep_failed = str(data.get('dont-keep-failed', False)).lower()
+
+    if policy == 'by-day':
+        policy_element = XML.SubElement(root,
+                                        'policy',
+                                        {'class': 'org.jenkins_ci.plugins.'
+                                         'build_keeper.ByDayPolicy'})
+        XML.SubElement(policy_element, 'buildPeriod').text = build_period
+        XML.SubElement(policy_element,
+                       'dontKeepFailed').text = dont_keep_failed
+    elif policy == 'keep-since':
+        policy_element = XML.SubElement(root,
+                                        'policy',
+                                        {'class': 'org.jenkins_ci.plugins.'
+                                         'build_keeper.KeepSincePolicy'})
+        XML.SubElement(policy_element, 'buildPeriod').text = build_period
+        XML.SubElement(policy_element,
+                       'dontKeepFailed').text = dont_keep_failed
+    elif policy == 'build-number':
+        policy_element = XML.SubElement(root,
+                                        'policy',
+                                        {'class': 'org.jenkins_ci.plugins.'
+                                         'build_keeper.BuildNumberPolicy'})
+        XML.SubElement(policy_element, 'buildPeriod').text = build_period
+        XML.SubElement(policy_element,
+                       'dontKeepFailed').text = dont_keep_failed
+    elif policy == 'keep-first-failed':
+        policy_element = XML.SubElement(root,
+                                        'policy',
+                                        {'class': 'org.jenkins_ci.plugins.'
+                                         'build_keeper.KeepFirstFailedPolicy'})
+        XML.SubElement(policy_element, 'numberOfFails').text = str(
+            data.get('number-of-fails', 0))
+    else:
+        InvalidAttributeError('policy', policy, valid_policies)
+
+
 def live_screenshot(parser, xml_parent, data):
     """yaml: live-screenshot
     Show live screenshots of running jobs in the job list.
@@ -386,19 +593,22 @@ def workspace_cleanup(parser, xml_parent, data):
 
     :arg list include: list of files to be included
     :arg list exclude: list of files to be excluded
-    :arg bool dirmatch: Apply pattern to directories too (default: false)
+    :arg bool dirmatch: Apply pattern to directories too (default false)
+    :arg str check-parameter: boolean environment variable to check to
+        determine whether to actually clean up
+    :arg str external-deletion-command: external deletion command to run
+        against files and directories
 
-    Example::
+    Example:
 
-      wrappers:
-        - workspace-cleanup:
-            include:
-              - "*.zip"
+    .. literalinclude::
+        /../../tests/wrappers/fixtures/workspace-cleanup001.yaml
+       :language: yaml
     """
 
     p = XML.SubElement(xml_parent,
                        'hudson.plugins.ws__cleanup.PreBuildCleanup')
-    p.set("plugin", "ws-cleanup@0.14")
+    p.set("plugin", "ws-cleanup")
     if "include" in data or "exclude" in data:
         patterns = XML.SubElement(p, 'patterns')
 
@@ -414,6 +624,12 @@ def workspace_cleanup(parser, xml_parent, data):
 
     deldirs = XML.SubElement(p, 'deleteDirs')
     deldirs.text = str(data.get("dirmatch", False)).lower()
+
+    XML.SubElement(p, 'cleanupParameter').text = str(
+        data.get('check-parameter', ''))
+
+    XML.SubElement(p, 'externalDelete').text = str(
+        data.get('external-deletion-command', ''))
 
 
 def m2_repository_cleanup(parser, xml_parent, data):
@@ -490,20 +706,20 @@ def rbenv(parser, xml_parent, data):
 
     All parameters are optional.
 
-    :arg str ruby-version: Version of Ruby to use  (default: 1.9.3-p484)
+    :arg str ruby-version: Version of Ruby to use  (default 1.9.3-p484)
     :arg bool ignore-local-version: If true, ignore local Ruby
         version (defined in the ".ruby-version" file in workspace) even if it
-        has been defined  (default: false)
+        has been defined  (default false)
     :arg str preinstall-gem-list: List of gems to install
-        (default: 'bundler,rake')
-    :arg str rbenv-root: RBENV_ROOT  (default: $HOME/.rbenv)
+        (default 'bundler,rake')
+    :arg str rbenv-root: RBENV_ROOT  (default $HOME/.rbenv)
     :arg str rbenv-repo: Which repo to clone rbenv from
-        (default: https://github.com/sstephenson/rbenv.git)
-    :arg str rbenv-branch: Which branch to clone rbenv from  (default: master)
+        (default https://github.com/rbenv/rbenv)
+    :arg str rbenv-branch: Which branch to clone rbenv from  (default master)
     :arg str ruby-build-repo: Which repo to clone ruby-build from
-        (default: https://github.com/sstephenson/ruby-build.git)
+        (default https://github.com/rbenv/ruby-build)
     :arg str ruby-build-branch: Which branch to clone ruby-build from
-        (default: master)
+        (default master)
 
     Example:
 
@@ -515,10 +731,10 @@ def rbenv(parser, xml_parent, data):
         ("preinstall-gem-list", 'gem__list', 'bundler,rake'),
         ("rbenv-root", 'rbenv__root', '$HOME/.rbenv'),
         ("rbenv-repo", 'rbenv__repository',
-            'https://github.com/sstephenson/rbenv.git'),
+            'https://github.com/rbenv/rbenv'),
         ("rbenv-branch", 'rbenv__revision', 'master'),
         ("ruby-build-repo", 'ruby__build__repository',
-            'https://github.com/sstephenson/ruby-build.git'),
+            'https://github.com/rbenv/ruby-build'),
         ("ruby-build-branch", 'ruby__build__revision', 'master'),
         ("ruby-version", 'version', '1.9.3-p484'),
     ]
@@ -654,13 +870,13 @@ def copy_to_slave(parser, xml_parent, data):
 
     :arg list includes: list of file patterns to copy (optional)
     :arg list excludes: list of file patterns to exclude (optional)
-    :arg bool flatten: flatten directory structure (Default: False)
+    :arg bool flatten: flatten directory structure (default false)
     :arg str relative-to: base location of includes/excludes, must be home
         ($JENKINS_HOME), somewhereElse ($JENKINS_HOME/copyToSlave),
         userContent ($JENKINS_HOME/userContent) or workspace
-        (Default: userContent)
+        (default userContent)
     :arg bool include-ant-excludes: exclude ant's default excludes
-        (Default: False)
+        (default false)
 
     Minimal Example:
 
@@ -805,7 +1021,7 @@ def env_script(parser, xml_parent, data):
     Requires the Jenkins :jenkins-wiki:`Environment Script Plugin
     <Environment+Script+Plugin>`.
 
-    :arg script-content: The script to run (default: '')
+    :arg script-content: The script to run (default '')
     :arg str script-type: The script type.
 
         :script-types supported:
@@ -813,7 +1029,7 @@ def env_script(parser, xml_parent, data):
             * **power-shell**
             * **batch-script**
     :arg only-run-on-parent: Only applicable for Matrix Jobs. If true, run only
-      on the matrix parent job (default: false)
+      on the matrix parent job (default false)
 
     Example:
 
@@ -845,14 +1061,14 @@ def jclouds(parser, xml_parent, data):
     Requires the Jenkins :jenkins-wiki:`JClouds Plugin <JClouds+Plugin>`.
 
     :arg bool single-use: Whether or not to terminate the slave after use
-                          (default: False).
+                          (default false).
     :arg list instances: The name of the jclouds template to create an
                          instance from, and its parameters.
     :arg str cloud-name: The name of the jclouds profile containing the
                          specified template.
-    :arg int count: How many instances to create (default: 1).
+    :arg int count: How many instances to create (default 1).
     :arg bool stop-on-terminate: Whether or not to suspend instead of terminate
-                                 the instance (default: False).
+                                 the instance (default false).
 
     Example::
 
@@ -890,6 +1106,67 @@ def jclouds(parser, xml_parent, data):
         XML.SubElement(xml_parent,
                        'jenkins.plugins.jclouds.compute.'
                        'JCloudsOneOffSlave')
+
+
+def openstack(parser, xml_parent, data):
+    """yaml: openstack
+    Provision slaves from OpenStack on demand.  Requires the Jenkins
+    :jenkins-wiki:`Openstack Cloud Plugin <Openstack+Cloud+Plugin>`.
+
+    :arg list instances: List of instances to be launched at the beginning of
+        the build.
+
+        :instances:
+            * **cloud-name** (`str`) -- The name of the cloud profile which
+              contains the specified cloud instance template (required).
+            * **template-name** (`str`) -- The name of the cloud instance
+              template to create an instance from(required).
+            * **manual-template** (`bool`) -- If True, instance template name
+              will be put in 'Specify Template Name as String' option. Not
+              specifying or specifying False, instance template name will be
+              put in 'Select Template from List' option. To use parameter
+              replacement, set this to True.  (default false)
+            * **count** (`int`) -- How many instances to create (default 1).
+
+    :arg bool single-use: Whether or not to terminate the slave after use
+        (default false).
+
+    Example:
+
+    .. literalinclude:: /../../tests/wrappers/fixtures/openstack001.yaml
+    """
+    tag_prefix = 'jenkins.plugins.openstack.compute.'
+
+    if 'instances' in data:
+        clouds_build_wrapper = XML.SubElement(
+            xml_parent, tag_prefix + 'JCloudsBuildWrapper')
+        instances_wrapper = XML.SubElement(
+            clouds_build_wrapper, 'instancesToRun')
+
+        for instance in data['instances']:
+            instances_to_run = XML.SubElement(
+                instances_wrapper, tag_prefix + 'InstancesToRun')
+
+            try:
+                cloud_name = instance['cloud-name']
+                template_name = instance['template-name']
+            except KeyError as exception:
+                raise MissingAttributeError(exception.args[0])
+
+            XML.SubElement(instances_to_run, 'cloudName').text = cloud_name
+
+            if instance.get('manual-template', False):
+                XML.SubElement(instances_to_run,
+                               'manualTemplateName').text = template_name
+            else:
+                XML.SubElement(instances_to_run,
+                               'templateName').text = template_name
+
+            XML.SubElement(instances_to_run, 'count').text = str(
+                instance.get('count', 1))
+
+    if data.get('single-use', False):
+        XML.SubElement(xml_parent, tag_prefix + 'JCloudsOneOffSlave')
 
 
 def build_user_vars(parser, xml_parent, data):
@@ -1137,7 +1414,7 @@ def logstash(parser, xml_parent, data):
     Dump the Jenkins console output to Logstash
     Requires the Jenkins :jenkins-wiki:`logstash plugin <Logstash+Plugin>`.
 
-    :arg use-redis: Boolean to use Redis. (default: true)
+    :arg use-redis: Boolean to use Redis. (default true)
     :arg redis: Redis config params
 
         :Parameter: * **host** (`str`) Redis hostname\
@@ -1235,9 +1512,9 @@ def delivery_pipeline(parser, xml_parent, data):
     <Delivery+Pipeline+Plugin>`.
 
     :arg str version-template: Template for generated version e.g
-        1.0.${BUILD_NUMBER} (default: '')
+        1.0.${BUILD_NUMBER} (default '')
     :arg bool set-display-name: Set the generated version as the display name
-        for the build (default: false)
+        for the build (default false)
 
     Example:
 
@@ -1377,12 +1654,16 @@ def credentials_binding(parser, xml_parent, data):
     <Credentials+Binding+Plugin>` version 1.1 or greater.
 
     :arg list binding-type: List of each bindings to create.  Bindings may be
-      of type `zip-file`, `file`, `username-password`, `text` or
-      `username-password-separated`.
+      of type `zip-file`, `file`, `username-password`, `text`,
+      `username-password-separated` or `amazon-web-services`.
       username-password sets a variable to the username and password given in
       the credentials, separated by a colon.
       username-password-separated sets one variable to the username and one
       variable to the password given in the credentials.
+      amazon-web-services sets one variable to the access key and one
+      variable to the secret access key. Requires the
+      :jenkins-wiki:`AWS Credentials Plugin <CloudBees+AWS+Credentials+Plugin>`
+      .
 
         :Parameters: * **credential-id** (`str`) UUID of the credential being
                        referenced
@@ -1394,6 +1675,12 @@ def credentials_binding(parser, xml_parent, data):
                      * **password** (`str`) Environment variable for the
                        password (Required for binding-type
                        username-password-separated)
+                     * **access-key** (`str`) Environment variable for the
+                       access key (Required for binding-type
+                       amazon-web-services)
+                     * **secret-key** (`str`) Environment variable for the
+                       access secret key (Required for binding-type
+                       amazon-web-services)
 
     Example:
 
@@ -1422,7 +1709,10 @@ def credentials_binding(parser, xml_parent, data):
         'username-password-separated': 'org.jenkinsci.plugins.'
                                        'credentialsbinding.impl.'
                                        'UsernamePasswordMultiBinding',
-        'text': 'org.jenkinsci.plugins.credentialsbinding.impl.StringBinding'
+        'text': 'org.jenkinsci.plugins.credentialsbinding.impl.StringBinding',
+        'amazon-web-services':
+            'com.cloudbees.jenkins.plugins.awscredentials'
+            '.AmazonWebServicesCredentialsBinding'
     }
     if not data:
         raise JenkinsJobsException('At least one binding-type must be '
@@ -1442,6 +1732,14 @@ def credentials_binding(parser, xml_parent, data):
                                    ).text = params['username']
                     XML.SubElement(binding_xml, 'passwordVariable'
                                    ).text = params['password']
+                except KeyError as e:
+                    raise MissingAttributeError(e.args[0])
+            elif binding_type == 'amazon-web-services':
+                try:
+                    XML.SubElement(binding_xml, 'accessKeyVariable'
+                                   ).text = params['access-key']
+                    XML.SubElement(binding_xml, 'secretKeyVariable'
+                                   ).text = params['secret-key']
                 except KeyError as e:
                     raise MissingAttributeError(e.args[0])
             else:
@@ -1517,9 +1815,9 @@ def xvnc(parser, xml_parent, data):
     Requires the Jenkins :jenkins-wiki:`xvnc plugin <Xvnc+Plugin>`.
 
     :arg bool screenshot: Take screenshot upon build completion
-                          (default: false)
+                          (default false)
     :arg bool xauthority: Create a dedicated Xauthority file per build
-                          (default: true)
+                          (default true)
 
     Example:
 
@@ -1541,7 +1839,7 @@ def job_log_logger(parser, xml_parent, data):
     <Job+Log+Logger+Plugin>`.
 
     :arg bool suppress-empty: Suppress empty log messages
-                              (default: true)
+                              (default true)
 
     Example:
 
@@ -1561,10 +1859,10 @@ def xvfb(parser, xml_parent, data):
     Requires the Jenkins :jenkins-wiki:`Xvfb Plugin <Xvfb+Plugin>`.
 
     :arg str installation-name: The name of the Xvfb tool instalation
-                                (default: default)
+                                (default default)
     :arg bool auto-display-name: Uses the -displayfd option of Xvfb by which it
                                  chooses it's own display name
-                                 (default: false)
+                                 (default false)
     :arg str display-name: Ordinal of the display Xvfb will be running on, if
                            left empty choosen based on current build executor
                            number (optional)
@@ -1572,18 +1870,18 @@ def xvfb(parser, xml_parent, data):
                               specify its name or label (optional)
     :arg bool parallel-build: When running multiple Jenkins nodes on the same
                               machine this setting influences the display
-                              number generation (default: false)
+                              number generation (default false)
     :arg int timeout: A timeout of given seconds to wait before returning
-                      control to the job (default: 0)
-    :arg str screen: Resolution and color depth. (default: 1024x768x24)
-    :arg str display-name-offset: Offset for display names. (default: 1)
+                      control to the job (default 0)
+    :arg str screen: Resolution and color depth. (default 1024x768x24)
+    :arg str display-name-offset: Offset for display names. (default 1)
     :arg str additional-options: Additional options to be added with the
                                  options above to the Xvfb command line
                                  (optional)
     :arg bool debug: If Xvfb output should appear in console log of this job
-                     (default: false)
+                     (default false)
     :arg bool shutdown-with-build: Should the display be kept until the whole
-                                   job ends (default: false)
+                                   job ends (default false)
 
     Example:
 
@@ -1708,7 +2006,7 @@ def artifactory_maven(parser, xml_parent, data):
     :jenkins-wiki:`Artifactory Plugin <Artifactory+Plugin>`
 
     :arg str url: URL of the Artifactory server. e.g.
-        http://www.jfrog.com/artifactory/ (default '')
+        https://www.jfrog.com/artifactory/ (default '')
     :arg str name: Artifactory user with permissions use for
         connected to the selected Artifactory Server
         (default '')
@@ -1753,12 +2051,17 @@ def artifactory_generic(parser, xml_parent, data):
     :jenkins-wiki:`Artifactory Plugin <Artifactory+Plugin>`
 
     :arg str url: URL of the Artifactory server. e.g.
-        http://www.jfrog.com/artifactory/ (default: '')
+        https://www.jfrog.com/artifactory/ (default '')
     :arg str name: Artifactory user with permissions use for
         connected to the selected Artifactory Server
         (default '')
-    :arg str repo-key: Release repository name (default '')
-    :arg str snapshot-repo-key: Snapshots repository name (default '')
+    :arg str repo-key: Release repository name (plugin < 2.3.0) (default '')
+    :arg str snapshot-repo-key: Snapshots repository name (plugin < 2.3.0)
+        (default '')
+    :arg str key-from-select: Repository key to use (plugin >= 2.3.0)
+        (default '')
+    :arg str key-from-text: Repository key to use that can be configured
+        dynamically using Jenkins variables (plugin >= 2.3.0) (default '')
     :arg list deploy-pattern: List of patterns for mappings
         build artifacts to published artifacts. Supports Ant-style wildcards
         mapping to target directories. E.g.: */*.zip=>dir (default [])
@@ -1768,12 +2071,12 @@ def artifactory_generic(parser, xml_parent, data):
         artifacts in addition to the default ones: build.name, build.number,
         and vcs.revision (default [])
     :arg bool deploy-build-info: Deploy jenkins build metadata with
-        artifacts to Artifactory (default False)
+        artifacts to Artifactory (default false)
     :arg bool env-vars-include: Include environment variables accessible by
         the build process. Jenkins-specific env variables are always included.
         Use the env-vars-include-patterns and env-vars-exclude-patterns to
         filter the environment variables published to artifactory.
-        (default False)
+        (default false)
     :arg list env-vars-include-patterns: List of environment variable patterns
         for including env vars as part of the published build info. Environment
         variables may contain the * and the ? wildcards (default [])
@@ -1781,9 +2084,9 @@ def artifactory_generic(parser, xml_parent, data):
         that determine the env vars excluded from the published build info
         (default [])
     :arg bool discard-old-builds:
-        Remove older build info from Artifactory (default False)
+        Remove older build info from Artifactory (default false)
     :arg bool discard-build-artifacts:
-        Remove older build artifacts from Artifactory (default False)
+        Remove older build artifacts from Artifactory (default false)
 
     Example:
 
@@ -1800,9 +2103,23 @@ def artifactory_generic(parser, xml_parent, data):
     details = XML.SubElement(artifactory, 'details')
     artifactory_common_details(details, data)
 
-    XML.SubElement(details, 'repositoryKey').text = data.get('repo-key', '')
-    XML.SubElement(details, 'snapshotsRepositoryKey').text = data.get(
-        'snapshot-repo-key', '')
+    # Get plugin information to maintain backwards compatibility
+    info = parser.registry.get_plugin_info('artifactory')
+    version = pkg_resources.parse_version(info.get('version', '0'))
+
+    if version >= pkg_resources.parse_version('2.3.0'):
+        deployReleaseRepo = XML.SubElement(details, 'deployReleaseRepository')
+        XML.SubElement(deployReleaseRepo, 'keyFromText').text = data.get(
+            'key-from-text', '')
+        XML.SubElement(deployReleaseRepo, 'keyFromSelect').text = data.get(
+            'key-from-select', '')
+        XML.SubElement(deployReleaseRepo, 'dynamicMode').text = str(
+            'key-from-text' in data.keys()).lower()
+    else:
+        XML.SubElement(details, 'repositoryKey').text = data.get(
+            'repo-key', '')
+        XML.SubElement(details, 'snapshotsRepositoryKey').text = data.get(
+            'snapshot-repo-key', '')
 
     XML.SubElement(artifactory, 'deployPattern').text = ','.join(data.get(
         'deploy-pattern', []))
@@ -1830,40 +2147,40 @@ def artifactory_maven_freestyle(parser, xml_parent, data):
     Requires :jenkins-wiki:`Artifactory Plugin <Artifactory+Plugin>`
 
     :arg str url: URL of the Artifactory server. e.g.
-        http://www.jfrog.com/artifactory/ (default: '')
+        https://www.jfrog.com/artifactory/ (default '')
     :arg str name: Artifactory user with permissions use for
         connected to the selected Artifactory Server (default '')
     :arg str release-repo-key: Release repository name (default '')
     :arg str snapshot-repo-key: Snapshots repository name (default '')
     :arg bool publish-build-info: Push build metadata with artifacts
-        (default False)
+        (default false)
     :arg bool discard-old-builds:
-        Remove older build info from Artifactory (default True)
+        Remove older build info from Artifactory (default true)
     :arg bool discard-build-artifacts:
-        Remove older build artifacts from Artifactory (default False)
+        Remove older build artifacts from Artifactory (default false)
     :arg bool include-env-vars: Include all environment variables
         accessible by the build process. Jenkins-specific env variables
-        are always included (default False)
+        are always included (default false)
     :arg bool run-checks: Run automatic license scanning check after the
-        build is complete (default False)
+        build is complete (default false)
     :arg bool include-publish-artifacts: Include the build's published
         module artifacts in the license violation checks if they are
         also used as dependencies for other modules in this build
-        (default False)
+        (default false)
     :arg bool license-auto-discovery: Tells Artifactory not to try
         and automatically analyze and tag the build's dependencies
-        with license information upon deployment (default True)
+        with license information upon deployment (default true)
     :arg bool enable-issue-tracker-integration: When the Jenkins
         JIRA plugin is enabled, synchronize information about JIRA
         issues to Artifactory and attach issue information to build
-        artifacts (default False)
+        artifacts (default false)
     :arg bool aggregate-build-issues: When the Jenkins JIRA plugin
         is enabled, include all issues from previous builds up to the
         latest build status defined in "Aggregation Build Status"
-        (default False)
+        (default false)
     :arg bool filter-excluded-artifacts-from-build: Add the excluded
         files to the excludedArtifacts list and remove them from the
-        artifacts list in the build info (default False)
+        artifacts list in the build info (default false)
     :arg str scopes:  A list of dependency scopes/configurations to run
         license violation checks on. If left empty all dependencies from
         all scopes will be checked (default '')
@@ -1884,23 +2201,23 @@ def artifactory_maven_freestyle(parser, xml_parent, data):
         all dependencies from all scopes will be checked (default '')
     :arg bool black-duck-run-checks: Automatic Black Duck Code Center
         compliance checks will occur after the build completes
-        (default False)
+        (default false)
     :arg bool black-duck-include-published-artifacts: Include the build's
         published module artifacts in the license violation checks if they
         are also used as dependencies for other modules in this build
-        (default False)
+        (default false)
     :arg bool auto-create-missing-component-requests: Auto create
         missing components in Black Duck Code Center application after
         the build is completed and deployed in Artifactory
-        (default True)
+        (default true)
     :arg bool auto-discard-stale-component-requests: Auto discard
         stale components in Black Duck Code Center application after
         the build is completed and deployed in Artifactory
-        (default True)
+        (default true)
     :arg bool deploy-artifacts: Push artifacts to the Artifactory
         Server. The specific artifacts to push are controlled using
         the deployment-include-patterns and deployment-exclude-patterns.
-        (default True)
+        (default true)
     :arg list deployment-include-patterns: List of patterns for including
         build artifacts to publish to artifactory. (default[]')
     :arg list deployment-exclude-patterns: List of patterns
@@ -1910,7 +2227,7 @@ def artifactory_maven_freestyle(parser, xml_parent, data):
         accessible by the build process. Jenkins-specific env variables
         are always included. Environment variables can be filtered using
         the env-vars-include-patterns nad env-vars-exclude-patterns.
-        (default False)
+        (default false)
     :arg list env-vars-include-patterns: List of environment variable patterns
         that will be included as part of the published build info. Environment
         variables may contain the * and the ? wildcards (default [])
