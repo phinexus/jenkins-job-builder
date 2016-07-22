@@ -1,0 +1,30 @@
+- defaults: 
+    name: project-branch-defaults
+    description: '{branch} branch of {project}.  CREATED BY JENKINS JOB BUILDER.  DO NOT EDIT IN JENKINS.'
+    display-name: '{project}-Build-{branch}'
+    artifact-path: '{artifact-path}'
+    branch: master
+    
+    activity-level: normal
+    scm-cron: 'H/60 * * * *'
+    scm-cron-high-activity: 'H/15 * * * *'
+    scm-cron-normal-activity: 'H/60 * * * *'
+    scm-cron-low-activity: 'H H(0-5) * * *'
+    
+    triggers:
+        - pollscm:
+            cron: '{scm-cron-{activity-level}-activity}'
+            ignore-post-commit-hooks: false
+            
+- job-template:
+    name: AllowNestedParamsTest-Build-{branch}
+    defaults: project-branch-defaults
+
+- project:
+    name: AllowNestedParamsTest
+    project: AllowNestedParamsTest
+    
+    jobs:
+        - AllowNestedParamsTest-Build-{branch}: 
+            branch: develop
+            activity-level: high    

@@ -24,6 +24,24 @@ from jenkins_jobs.errors import JenkinsJobsException
 
 logger = logging.getLogger(__name__)
 
+def recursive_format(s, paramdict, allow_empty=False):
+	lbracePos = s.find('{')
+	nextLBracePos = s.find('{', lbracePos+1)
+	rbracePos = s.find('}', lbracePos)
+
+	if (lbracePos == -1): return s
+
+	while (nextLBracePos != -1 and nextLBracePos < rbracePos):
+		lbracePos = nextLBracePos
+		nextLBracePos = s.find('{', lbracePos+1)
+		rbracePos = s.find('}', lbracePos)
+
+	sToFormat = s[lbracePos:rbracePos+1]
+	formattedStr = CustomFormatter(allow_empty).format(sToFormat, **paramdict)
+	s = s[:lbracePos]+formattedStr+s[rbracePos+1:]
+
+	return recursive_format(s, paramdict)	
+			
 
 def deep_format(obj, paramdict, allow_empty=False):
     """Apply the paramdict via str.format() to all string objects found within
@@ -38,7 +56,15 @@ def deep_format(obj, paramdict, allow_empty=False):
             if result is not None:
                 ret = paramdict[result.group("key")]
             else:
-                ret = CustomFormatter(allow_empty).format(obj, **paramdict)
+                s = obj
+                
+                recursive = (re.match('\{[^\}]*?\{',s) is not None)
+                if recursive:
+                    s = recursive_format(s, paramdict, allow_empty)
+                else:
+                    s = CustomFormatter(allow_empty).format(s, **paramdict)    
+                
+                ret = s
         except KeyError as exc:
             missing_key = exc.message
             desc = "%s parameter missing to format %s\nGiven:\n%s" % (
