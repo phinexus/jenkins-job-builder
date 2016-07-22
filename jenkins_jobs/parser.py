@@ -20,6 +20,7 @@ import fnmatch
 import io
 import itertools
 import logging
+import os
 import pkg_resources
 
 from jenkins_jobs.constants import MAGIC_MANAGE_STRING
@@ -70,27 +71,67 @@ def combination_matches(combination, match_combinations):
 
 
 class YamlParser(object):
-    def __init__(self, config=None, plugins_info=None):
+    def __init__(self, jjb_config=None, plugins_info=None):
         self.data = {}
         self.jobs = []
         self.xml_jobs = []
-        self.config = config
-        self.registry = ModuleRegistry(self.config, plugins_info)
-        self.path = ["."]
-        if self.config:
-            if config.has_section('job_builder') and \
-                    config.has_option('job_builder', 'include_path'):
-                self.path = config.get('job_builder',
-                                       'include_path').split(':')
-        self.keep_desc = self.get_keep_desc()
 
-    def get_keep_desc(self):
-        keep_desc = False
-        if self.config and self.config.has_section('job_builder') and \
-                self.config.has_option('job_builder', 'keep_descriptions'):
-            keep_desc = self.config.getboolean('job_builder',
-                                               'keep_descriptions')
-        return keep_desc
+        self.jjb_config = jjb_config
+        self.keep_desc = jjb_config.yamlparser['keep_descriptions']
+        self.path = jjb_config.yamlparser['include_path']
+
+        self.registry = ModuleRegistry(jjb_config,
+                                       plugins_info)
+
+    def load_files(self, fn):
+
+        # handle deprecated behavior, and check that it's not a file like
+        # object as these may implement the '__iter__' attribute.
+        if not hasattr(fn, '__iter__') or hasattr(fn, 'read'):
+            logger.warning(
+                'Passing single elements for the `fn` argument in '
+                'Builder.load_files is deprecated. Please update your code '
+                'to use a list as support for automatic conversion will be '
+                'removed in a future version.')
+            fn = [fn]
+
+        files_to_process = []
+        for path in fn:
+            if not hasattr(path, 'read') and os.path.isdir(path):
+                files_to_process.extend([os.path.join(path, f)
+                                         for f in os.listdir(path)
+                                         if (f.endswith('.yml')
+                                             or f.endswith('.yaml'))])
+            else:
+                files_to_process.append(path)
+
+        # symlinks used to allow loading of sub-dirs can result in duplicate
+        # definitions of macros and templates when loading all from top-level
+        unique_files = []
+        for f in files_to_process:
+            if hasattr(f, 'read'):
+                unique_files.append(f)
+                continue
+            rpf = os.path.realpath(f)
+            if rpf not in unique_files:
+                unique_files.append(rpf)
+            else:
+                logger.warning("File '%s' already added as '%s', ignoring "
+                               "reference to avoid duplicating yaml "
+                               "definitions." % (f, rpf))
+
+        for in_file in unique_files:
+            # use of ask-for-permissions instead of ask-for-forgiveness
+            # performs better when low use cases.
+            if hasattr(in_file, 'name'):
+                fname = in_file.name
+            else:
+                fname = in_file
+            logger.debug("Parsing YAML file {0}".format(fname))
+            if hasattr(in_file, 'read'):
+                self.parse_fp(in_file)
+            else:
+                self.parse(in_file)
 
     def parse_fp(self, fp):
         # wrap provided file streams to ensure correct encoding used
@@ -129,8 +170,7 @@ class YamlParser(object):
 
     def _handle_dups(self, message):
 
-        if not (self.config and self.config.has_section('job_builder') and
-                self.config.getboolean('job_builder', 'allow_duplicates')):
+        if not self.jjb_config.yamlparser['allow_duplicates']:
             logger.error(message)
             raise JenkinsJobsException(message)
         else:
@@ -323,19 +363,14 @@ class YamlParser(object):
                 logger.debug('Excluding combination %s', str(params))
                 continue
 
-            allow_empty_variables = self.config \
-                and self.config.has_section('job_builder') \
-                and self.config.has_option(
-                    'job_builder', 'allow_empty_variables') \
-                and self.config.getboolean(
-                    'job_builder', 'allow_empty_variables')
-
             for key in template.keys():
                 if key not in params:
                     params[key] = template[key]
 
             params['template-name'] = template_name
-            expanded = deep_format(template, params, allow_empty_variables)
+            expanded = deep_format(
+                template, params,
+                self.jjb_config.yamlparser['allow_empty_variables'])
 
             job_name = expanded.get('name')
             if jobs_glob and not matches(job_name, jobs_glob):

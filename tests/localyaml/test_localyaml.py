@@ -21,7 +21,8 @@ from testtools import ExpectedException
 from testtools import TestCase
 from yaml.composer import ComposerError
 
-from jenkins_jobs import builder
+from jenkins_jobs.config import JJBConfig
+from jenkins_jobs.parser import YamlParser
 from tests.base import get_scenarios
 from tests.base import JsonTestCase
 from tests.base import LoggingFixture
@@ -76,6 +77,11 @@ class TestCaseLocalYamlIncludeAnchors(LoggingFixture, TestCase):
         files = ["custom_same_anchor-001-part1.yaml",
                  "custom_same_anchor-001-part2.yaml"]
 
-        b = builder.Builder("http://example.com", "jenkins", None,
-                            plugins_list=[])
-        b.load_files([os.path.join(self.fixtures_path, f) for f in files])
+        jjb_config = JJBConfig()
+        jjb_config.jenkins['url'] = 'http://example.com'
+        jjb_config.jenkins['user'] = 'jenkins'
+        jjb_config.jenkins['password'] = 'password'
+        jjb_config.builder['plugins_info'] = []
+        jjb_config.validate()
+        j = YamlParser(jjb_config)
+        j.load_files([os.path.join(self.fixtures_path, f) for f in files])

@@ -1,3 +1,23 @@
+# Joint copyright:
+#  - Copyright 2015 Hewlett-Packard Development Company, L.P.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+
+# The goal of these tests is to check that given a particular set of flags to
+# Jenkins Job Builder's command line tools it will result in a particular set
+# of actions by the JJB library, usually through interaction with the
+# python-jenkins library.
+
 import os
 
 from tests.base import mock
@@ -7,7 +27,7 @@ from tests.cmd.test_cmd import CmdTestsBase
 @mock.patch('jenkins_jobs.builder.Jenkins.get_plugins_info', mock.MagicMock)
 class DeleteTests(CmdTestsBase):
 
-    @mock.patch('jenkins_jobs.cmd.Builder.delete_job')
+    @mock.patch('jenkins_jobs.cli.entry.Builder.delete_job')
     def test_delete_single_job(self, delete_job_mock):
         """
         Test handling the deletion of a single Jenkins job.
@@ -16,7 +36,7 @@ class DeleteTests(CmdTestsBase):
         args = ['--conf', self.default_config_file, 'delete', 'test_job']
         self.execute_jenkins_jobs_with_args(args)
 
-    @mock.patch('jenkins_jobs.cmd.Builder.delete_job')
+    @mock.patch('jenkins_jobs.cli.entry.Builder.delete_job')
     def test_delete_multiple_jobs(self, delete_job_mock):
         """
         Test handling the deletion of multiple Jenkins jobs.

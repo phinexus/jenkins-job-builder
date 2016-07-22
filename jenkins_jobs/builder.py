@@ -225,72 +225,22 @@ class Jenkins(object):
 
 
 class Builder(object):
-    def __init__(self, jenkins_url, jenkins_user, jenkins_password,
-                 config=None, jenkins_timeout=_DEFAULT_TIMEOUT,
-                 ignore_cache=False, flush_cache=False, plugins_list=None):
-        self.jenkins = Jenkins(jenkins_url, jenkins_user, jenkins_password,
-                               jenkins_timeout)
-        self.cache = CacheStorage(jenkins_url, flush=flush_cache)
-        self.global_config = config
-        self.ignore_cache = ignore_cache
-        self._plugins_list = plugins_list
+    def __init__(self, jjb_config):
+        self.jenkins = Jenkins(jjb_config.jenkins['url'],
+                               jjb_config.jenkins['user'],
+                               jjb_config.jenkins['password'],
+                               jjb_config.jenkins['timeout'])
+        self.cache = CacheStorage(jjb_config.jenkins['url'],
+                                  flush=jjb_config.builder['flush_cache'])
+        self._plugins_list = jjb_config.builder['plugins_info']
+
+        self.jjb_config = jjb_config
 
     @property
     def plugins_list(self):
         if self._plugins_list is None:
             self._plugins_list = self.jenkins.get_plugins_info()
         return self._plugins_list
-
-    def load_files(self, fn):
-        self.parser = YamlParser(self.global_config, self.plugins_list)
-
-        # handle deprecated behavior, and check that it's not a file like
-        # object as these may implement the '__iter__' attribute.
-        if not hasattr(fn, '__iter__') or hasattr(fn, 'read'):
-            logger.warning(
-                'Passing single elements for the `fn` argument in '
-                'Builder.load_files is deprecated. Please update your code '
-                'to use a list as support for automatic conversion will be '
-                'removed in a future version.')
-            fn = [fn]
-
-        files_to_process = []
-        for path in fn:
-            if not hasattr(path, 'read') and os.path.isdir(path):
-                files_to_process.extend([os.path.join(path, f)
-                                         for f in os.listdir(path)
-                                         if (f.endswith('.yml')
-                                             or f.endswith('.yaml'))])
-            else:
-                files_to_process.append(path)
-
-        # symlinks used to allow loading of sub-dirs can result in duplicate
-        # definitions of macros and templates when loading all from top-level
-        unique_files = []
-        for f in files_to_process:
-            if hasattr(f, 'read'):
-                unique_files.append(f)
-                continue
-            rpf = os.path.realpath(f)
-            if rpf not in unique_files:
-                unique_files.append(rpf)
-            else:
-                logger.warning("File '%s' already added as '%s', ignoring "
-                               "reference to avoid duplicating yaml "
-                               "definitions." % (f, rpf))
-
-        for in_file in unique_files:
-            # use of ask-for-permissions instead of ask-for-forgiveness
-            # performs better when low use cases.
-            if hasattr(in_file, 'name'):
-                fname = in_file.name
-            else:
-                fname = in_file
-            logger.debug("Parsing YAML file {0}".format(fname))
-            if hasattr(in_file, 'read'):
-                self.parser.parse_fp(in_file)
-            else:
-                self.parser.parse(in_file)
 
     def delete_old_managed(self, keep=None):
         jobs = self.jenkins.get_jobs()
@@ -312,8 +262,10 @@ class Builder(object):
         return deleted_jobs
 
     def delete_job(self, jobs_glob, fn=None):
+        self.parser = YamlParser(self.jjb_config, self.plugins_list)
+
         if fn:
-            self.load_files(fn)
+            self.parser.load_files(fn)
             self.parser.expandYaml([jobs_glob])
             jobs = [j['name'] for j in self.parser.jobs]
         else:
@@ -337,7 +289,9 @@ class Builder(object):
     @parallelize
     def changed(self, job):
         md5 = job.md5()
-        changed = self.ignore_cache or self.cache.has_changed(job.name, md5)
+
+        changed = (self.jjb_config.builder['ignore_cache'] or
+                   self.cache.has_changed(job.name, md5))
         if not changed:
             logger.debug("'{0}' has not changed".format(job.name))
         return changed
@@ -345,7 +299,10 @@ class Builder(object):
     def update_jobs(self, input_fn, jobs_glob=None, output=None,
                     n_workers=None):
         orig = time.time()
-        self.load_files(input_fn)
+
+        self.parser = YamlParser(self.jjb_config, self.plugins_list)
+        self.parser.load_files(input_fn)
+
         self.parser.expandYaml(jobs_glob)
         self.parser.generateXML()
         step = time.time()
