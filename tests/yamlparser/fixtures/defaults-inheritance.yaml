@@ -1,0 +1,31 @@
+- defaults:
+    name: project-branch-defaults
+    project: UNKNOWN project
+    branch: master
+    description: '{branch} branch of {project}.  CREATED BY JENKINS JOB BUILDER.  DO NOT EDIT IN JENKINS.'          
+    logrotate:
+        artifactDaysToKeep: 14
+        artifactNumToKeep: 5
+        daysToKeep: 30
+        numToKeep: -1
+    
+    quiet-period: 300
+    block-downstream: false
+    block-upstream: false
+
+- defaults:
+    name: DesktopServices-defaults
+    defaults: project-branch-defaults
+    quiet-period: 600
+    organization: Desktop Services
+    
+- job-template:
+    name: defaults-inheritance
+    defaults: DesktopServices-defaults
+    project: CRMApp
+    artifact: CRM.waf
+            
+- project:
+    name: DefaultsInheritanceTest
+    jobs:
+        - defaults-inheritance: {branch: release/1.0}

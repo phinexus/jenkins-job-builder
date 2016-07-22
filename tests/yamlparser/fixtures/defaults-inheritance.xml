@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<project>
+  <actions/>
+  <description>release/1.0 branch of CRMApp.  CREATED BY JENKINS JOB BUILDER.  DO NOT EDIT IN JENKINS.&lt;!-- Managed by Jenkins Job Builder --&gt;</description>
+  <keepDependencies>false</keepDependencies>
+  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <concurrentBuild>false</concurrentBuild>
+  <quietPeriod>600</quietPeriod>
+  <canRoam>true</canRoam>
+  <logRotator>
+    <daysToKeep>30</daysToKeep>
+    <numToKeep>-1</numToKeep>
+    <artifactDaysToKeep>14</artifactDaysToKeep>
+    <artifactNumToKeep>5</artifactNumToKeep>
+  </logRotator>
+  <properties/>
+  <scm class="hudson.scm.NullSCM"/>
+  <builders/>
+  <publishers/>
+  <buildWrappers/>
+</project>

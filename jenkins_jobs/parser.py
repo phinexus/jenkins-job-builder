@@ -205,9 +205,15 @@ class YamlParser(object):
             whichdefaults = [whichdefaults]
                 
         for defName in whichdefaults:        
-            #make a local copy of the defaults dict
+            #make a local copy of the defaults named [defName]
             defaults = copy.deepcopy(self.data.get('defaults',
                                      {}).get(defName, {}))
+                                     
+            #if defaults has defaults, apply those
+            superdefaults = defaults.get('defaults', None)
+            if superdefaults is not None: 
+            	newdata.update( self._applyDefaults(defaults) ) 
+            
             #if it is blank, but was specified by name, there's a problem                         
             if defaults == {} and defName != 'global':
                 raise JenkinsJobsException("Unknown defaults set: '{0}'"
