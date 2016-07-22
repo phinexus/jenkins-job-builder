@@ -13,21 +13,26 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
-import argparse
+import io
+import os
 import logging
+import platform
 import sys
 
-from stevedore import extension
+import yaml
 
-import jenkins_jobs.version
+from jenkins_jobs.cli.parser import create_parser
 from jenkins_jobs import cmd
+from jenkins_jobs.config import JJBConfig
+from jenkins_jobs import utils
+from jenkins_jobs import version
 
-logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger()
 
 
 def __version__():
     return "Jenkins Job Builder version: %s" % \
-        jenkins_jobs.version.version_info.version_string()
+        version.version_info.version_string()
 
 
 class JenkinsJobs(object):
@@ -47,90 +52,73 @@ class JenkinsJobs(object):
     various command line parameters.
     """
 
-    def __init__(self, args=None):
+    def __init__(self, args=None, **kwargs):
         if args is None:
             args = []
-        parser = self._create_parser()
-        self._options = parser.parse_args(args)
+        self.parser = create_parser()
+        self.options = self.parser.parse_args(args)
 
-        if not self._options.command:
-            parser.error("Must specify a 'command' to be performed")
+        self.jjb_config = JJBConfig(self.options.conf, **kwargs)
+
+        if not self.options.command:
+            self.parser.error("Must specify a 'command' to be performed")
 
         logger = logging.getLogger()
-        if (self._options.log_level is not None):
-            self._options.log_level = getattr(logging,
-                                              self._options.log_level.upper(),
-                                              logger.getEffectiveLevel())
-            logger.setLevel(self._options.log_level)
+        if (self.options.log_level is not None):
+            self.options.log_level = getattr(logging,
+                                             self.options.log_level.upper(),
+                                             logger.getEffectiveLevel())
+            logger.setLevel(self.options.log_level)
 
-        self._config_file_values = cmd.setup_config_settings(self._options)
+        self._parse_additional()
+        self.jjb_config.validate()
 
-    def _create_parser(self):
-        parser = argparse.ArgumentParser()
-        parser.add_argument(
-            '--conf',
-            dest='conf',
-            help='''configuration file''')
-        parser.add_argument(
-            '-l',
-            '--log_level',
-            dest='log_level',
-            default='info',
-            help='''log level (default: %(default)s)''')
-        parser.add_argument(
-            '--ignore-cache',
-            action='store_true',
-            dest='ignore_cache',
-            default=False,
-            help='''ignore the cache and update the jobs anyhow (that will only
-            flush the specified jobs cache)''')
-        parser.add_argument(
-            '--flush-cache',
-            action='store_true',
-            dest='flush_cache',
-            default=False,
-            help='''flush all the cache entries before updating''')
-        parser.add_argument(
-            '--version',
-            dest='version',
-            action='version',
-            version=__version__(),
-            help='''show version''')
-        parser.add_argument(
-            '--allow-empty-variables',
-            action='store_true',
-            dest='allow_empty_variables',
-            default=None,
-            help='''Don\'t fail if any of the variables inside any string are
-            not defined, replace with empty string instead.''')
-        parser.add_argument(
-            '--user', '-u',
-            help='''The Jenkins user to use for authentication. This overrides
-            the user specified in the configuration file.''')
-        parser.add_argument(
-            '--password', '-p',
-            help='''Password or API token to use for authenticating towards
-            Jenkins. This overrides the password specified in the configuration
-            file.''')
+    def _parse_additional(self):
+        for opt in ['ignore_cache', 'user', 'password',
+                    'allow_empty_variables']:
+            opt_val = getattr(self.options, opt, None)
+            if opt_val is not None:
+                setattr(self.jjb_config, opt, opt_val)
 
-        subparser = parser.add_subparsers(
-            dest='command',
-            help='''update, test or delete job''')
+        if getattr(self.options, 'plugins_info_path', None) is not None:
+            with io.open(self.options.plugins_info_path, 'r',
+                         encoding='utf-8') as yaml_file:
+                plugins_info = yaml.load(yaml_file)
+            if not isinstance(plugins_info, list):
+                self.parser.error("{0} must contain a Yaml list!".format(
+                                  self.options.plugins_info_path))
+            self.jjb_config.plugins_info = plugins_info
 
-        extension_manager = extension.ExtensionManager(
-            namespace='jjb.cli.subcommands',
-            invoke_on_load=True,
-        )
+        if getattr(self.options, 'path', None):
+            if hasattr(self.options.path, 'read'):
+                logger.debug("Input file is stdin")
+                if self.options.path.isatty():
+                    if platform.system() == 'Windows':
+                        key = 'CTRL+Z'
+                    else:
+                        key = 'CTRL+D'
+                    logger.warn("Reading configuration from STDIN. "
+                                "Press %s to end input.", key)
+            else:
+                # take list of paths
+                self.options.path = self.options.path.split(os.pathsep)
 
-        def parse_subcommand_args(ext, subparser):
-            ext.obj.parse_args(subparser)
+                do_recurse = (getattr(self.options, 'recursive', False) or
+                              self.jjb_config.recursive)
 
-        extension_manager.map(parse_subcommand_args, subparser)
-
-        return parser
+                excludes = ([e for elist in self.options.exclude
+                             for e in elist.split(os.pathsep)] or
+                            self.jjb_config.excludes)
+                paths = []
+                for path in self.options.path:
+                    if do_recurse and os.path.isdir(path):
+                        paths.extend(utils.recurse_path(path, excludes))
+                    else:
+                        paths.append(path)
+                self.options.path = paths
 
     def execute(self):
-        jenkins_jobs.cmd.execute(self._options, self._config_file_values)
+        cmd.execute(self.options, self.jjb_config)
 
 
 def main():

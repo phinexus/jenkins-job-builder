@@ -617,6 +617,8 @@ def repo(parser, xml_parent, data):
         (optional)
     :arg str manifest-group: Only retrieve those projects in the manifest
         tagged with the provided group name (optional)
+    :arg list(str) ignore-projects: a list of projects in which changes would
+        not be considered to trigger a build when pooling (optional)
     :arg str destination-dir: Location relative to the workspace root to clone
         under (optional)
     :arg str repo-url: custom url to retrieve the repo application (optional)
@@ -688,6 +690,13 @@ def repo(parser, xml_parent, data):
             xe.text = str(val).lower()
         else:
             xe.text = str(val)
+
+    # ignore-projects does not follow the same pattern of the other parameters,
+    # so process it here:
+    ip = XML.SubElement(scm, 'ignoreProjects', {'class': 'linked-hash-set'})
+    ignored_projects = data.get('ignore-projects', [''])
+    for ignored_project in ignored_projects:
+        XML.SubElement(ip, 'string').text = str(ignored_project)
 
 
 def store(parser, xml_parent, data):
@@ -1140,9 +1149,9 @@ def openshift_img_streams(parser, xml_parent, data):
         form `oc project` when you created the BuildConfig you want to run
         a Build on. (default test)
     :arg str auth-token: The value here is what you supply with the --token
-        option when invoking the OpenShift `oc` command. (optional)
-    :arg str verbose: This flag is the toggle for
-        turning on or off detailed logging in this plug-in. (optional)
+        option when invoking the OpenShift `oc` command. (default '')
+    :arg bool verbose: This flag is the toggle for
+        turning on or off detailed logging in this plug-in. (default false)
 
     Full Example:
 
@@ -1167,10 +1176,9 @@ def openshift_img_streams(parser, xml_parent, data):
         ("api-url", 'apiURL', 'https://openshift.default.svc.cluster.local'),
         ("namespace", 'namespace', 'test'),
         ("auth-token", 'authToken', ''),
-        ("verbose", 'verbose', ''),
+        ("verbose", 'verbose', False),
     ]
-
-    convert_mapping_to_xml(scm, data, mapping)
+    convert_mapping_to_xml(scm, data, mapping, fail_required=True)
 
 
 def bzr(parser, xml_parent, data):
@@ -1178,7 +1186,7 @@ def bzr(parser, xml_parent, data):
     Specifies the bzr SCM repository for this job.
     Requires the Jenkins :jenkins-wiki:`Bazaar Plugin <Bazaar+Plugin>`.
 
-    :arg str url: URL of the bzr branch
+    :arg str url: URL of the bzr branch (required)
     :arg bool clean-tree: Clean up the workspace (using bzr) before pulling
         the branch (default false)
     :arg bool lightweight-checkout: Use a lightweight checkout instead of a
@@ -1199,18 +1207,17 @@ def bzr(parser, xml_parent, data):
     Example:
 
     .. literalinclude:: /../../tests/scm/fixtures/bzr001.yaml
+       :language: yaml
     """
-    if 'url' not in data:
-        raise JenkinsJobsException('Must specify a url for bzr scm')
     mapping = [
         # option, xml name, default value (text), attributes (hard coded)
-        ('url', 'source', ''),
+        ('url', 'source', None),
         ('clean-tree', 'cleantree', False),
         ('lightweight-checkout', 'checkout', False),
     ]
     scm_element = XML.SubElement(
         xml_parent, 'scm', {'class': 'hudson.plugins.bazaar.BazaarSCM'})
-    convert_mapping_to_xml(scm_element, data, mapping)
+    convert_mapping_to_xml(scm_element, data, mapping, fail_required=True)
 
     browser_name_to_class = {
         'loggerhead': 'Loggerhead',

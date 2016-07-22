@@ -1058,6 +1058,7 @@ def junit(parser, xml_parent, data):
     """
     junitresult = XML.SubElement(xml_parent,
                                  'hudson.tasks.junit.JUnitResultArchiver')
+    junitresult.set('plugin', 'junit')
     XML.SubElement(junitresult, 'testResults').text = data['results']
     XML.SubElement(junitresult, 'keepLongStdio').text = str(
         data.get('keep-long-stdio', True)).lower()
@@ -3071,7 +3072,7 @@ def tap(parser, xml_parent, data):
 
     Requires the Jenkins :jenkins-wiki:`TAP Plugin <TAP+Plugin>`.
 
-    :arg str results: TAP test result files
+    :arg str results: TAP test result files (required)
     :arg bool fail-if-no-results: Fail if no result (default false)
     :arg bool failed-tests-mark-build-as-failure:
                 Mark build as failure if test fails (default false)
@@ -3079,35 +3080,46 @@ def tap(parser, xml_parent, data):
     :arg bool enable-subtests: Enable subtests (default true)
     :arg bool discard-old-reports: Discard old reports (default false)
     :arg bool todo-is-failure: Handle TODO's as failures (default true)
+    :arg bool include-comment-diagnostics: Include comment diagnostics (#) in
+        the results table (>=1.12) (default false)
+    :arg bool validate-tests: Validate number of tests (>=1.13) (default false)
+    :arg bool plan-required: TAP plan required? (>=1.17) (default true)
+    :arg bool verbose: Print a message for each TAP stream file (>=1.17)
+        (default true)
+    :arg bool show-only-failures: show only test failures (>=1.17)
+        (default false)
 
+    Full Example:
 
-    Example:
+    .. literalinclude:: /../../tests/publishers/fixtures/tap-full.yaml
+       :language: yaml
 
-    .. literalinclude:: /../../tests/publishers/fixtures/tap001.yaml
+    Minimal Example:
+
+    .. literalinclude:: /../../tests/publishers/fixtures/tap-minimal.yaml
        :language: yaml
     """
 
     tap = XML.SubElement(xml_parent, 'org.tap4j.plugin.TapPublisher')
+    tap.set('plugin', 'tap')
 
-    XML.SubElement(tap, 'testResults').text = data['results']
-
-    XML.SubElement(tap, 'failIfNoResults').text = str(
-        data.get('fail-if-no-results', False)).lower()
-
-    XML.SubElement(tap, 'failedTestsMarkBuildAsFailure').text = str(
-        data.get('failed-tests-mark-build-as-failure', False)).lower()
-
-    XML.SubElement(tap, 'outputTapToConsole').text = str(
-        data.get('output-tap-to-console', True)).lower()
-
-    XML.SubElement(tap, 'enableSubtests').text = str(
-        data.get('enable-subtests', True)).lower()
-
-    XML.SubElement(tap, 'discardOldReports').text = str(
-        data.get('discard-old-reports', False)).lower()
-
-    XML.SubElement(tap, 'todoIsFailure').text = str(
-        data.get('todo-is-failure', True)).lower()
+    mappings = [
+        ('results', 'testResults', None),
+        ('fail-if-no-results', 'failIfNoResults', False),
+        ('failed-tests-mark-build-as-failure',
+         'failedTestsMarkBuildAsFailure',
+         False),
+        ('output-tap-to-console', 'outputTapToConsole', True),
+        ('enable-subtests', 'enableSubtests', True),
+        ('discard-old-reports', 'discardOldReports', False),
+        ('todo-is-failure', 'todoIsFailure', True),
+        ('include-comment-diagnostics', 'includeCommentDiagnostics', False),
+        ('validate-tests', 'validateNumberOfTests', False),
+        ('plan-required', 'planRequired', True),
+        ('verbose', 'verbose', True),
+        ('show-only-failures', 'showOnlyFailures', False),
+    ]
+    helpers.convert_mapping_to_xml(tap, data, mappings, fail_required=True)
 
 
 def post_tasks(parser, xml_parent, data):
@@ -3711,34 +3723,26 @@ def plot(parser, xml_parent, data):
     :arg str yaxis: title of Y axis (default '')
     :arg str group: name of the group to which the plot belongs (required)
     :arg int num-builds: number of builds to plot across
-                         (default plot all builds)
+        (default plot all builds)
     :arg str style:  Specifies the graph style of the plot
-                     Can be: area, bar, bar3d, line, line3d, stackedArea,
-                     stackedbar, stackedbar3d, waterfall
-                     (default 'line')
-    :arg bool use-description: When false, the X-axis labels are formed
-                               using build numbers and dates, and the
-                               corresponding tooltips contain the build
-                               descriptions. When enabled, the contents of
-                               the labels and tooltips are swapped, with the
-                               descriptions used as X-axis labels and the
-                               build number and date used for tooltips.
-                               (default false)
+        Can be: area, bar, bar3d, line, line3d, stackedArea, stackedbar,
+        stackedbar3d, waterfall (default 'line')
+    :arg bool use-description: When false, the X-axis labels are formed using
+        build numbers and dates, and the corresponding tooltips contain the
+        build descriptions. When enabled, the contents of the labels and
+        tooltips are swapped, with the descriptions used as X-axis labels and
+        the build number and date used for tooltips. (default false)
     :arg bool exclude-zero-yaxis: When false, Y-axis contains the value zero
-                                  even if it is not included in the data
-                                  series. When true, the value zero is not
-                                  automatically included. (default false)
+        even if it is not included in the data series. When true, the value
+        zero is not automatically included. (default false)
     :arg bool logarithmic-yaxis: When true, the Y-axis will use a logarithmic
-                                 scale. By default, the Y-axis uses a linear
-                                 scale. (default false)
+        scale. By default, the Y-axis uses a linear scale. (default false)
     :arg bool keep-records: When true, show all builds up to 'Number of
-                            builds to include'. (default false)
+        builds to include'. (default false)
     :arg str csv-file-name: Use for choosing the file name in which the data
-                            will be persisted. If none specified and random
-                            name is generated as done in the Jenkins Plot
-                            plugin.
-                            (default random generated .csv filename, same
-                            behaviour as the Jenkins Plot plugin)
+        will be persisted. If none specified and random name is generated as
+        done in the Jenkins Plot plugin. (default random generated .csv
+        filename, same behaviour as the Jenkins Plot plugin)
     :arg list series: list data series definitions
 
       :Serie: * **file** (`str`) : files to include
@@ -4282,26 +4286,65 @@ def testng(parser, xml_parent, data):
     Requires the Jenkins :jenkins-wiki:`TestNG Results Plugin <testng-plugin>`.
 
     :arg str pattern: filename pattern to locate the TestNG XML report files
+        (required)
     :arg bool escape-test-description: escapes the description string
       associated with the test method while displaying test method details
       (default true)
     :arg bool escape-exception-msg: escapes the test method's exception
       messages. (default true)
+    :arg bool fail-on-failed-test-config: Allows for a distinction between
+        failing tests and failing configuration methods (>=1.10) (default
+        false)
+    :arg bool show-failed-builds: include results from failed builds in the
+        trend graph (>=1.6) (default false)
+    :arg int unstable-skips: Build is marked UNSTABLE if the number/percentage
+        of skipped tests exceeds the specified threshold (>=1.11) (default 100)
+    :arg int unstable-fails: Build is marked UNSTABLE if the number/percentage
+        of failed tests exceeds the specified threshold (>=1.11) (default 0)
+    :arg int failed-skips: Build is marked FAILURE if the number/percentage of
+        skipped tests exceeds the specified threshold (>=1.11) (default 100)
+    :arg int failed-fails: Build is marked FAILURE if the number/percentage of
+        failed tests exceeds the specified threshold (>=1.11) (default 100)
+    :arg str threshold-mode: Interpret threshold as number of tests or
+        percentage of tests (>=1.11) (default percentage)
 
-    Example:
+    Full Example:
 
-    .. literalinclude:: /../../tests/publishers/fixtures/testng001.yaml
+    .. literalinclude:: /../../tests/publishers/fixtures/testng-full.yaml
+       :language: yaml
+
+    Minimal Example:
+
+    .. literalinclude:: /../../tests/publishers/fixtures/testng-minimal.yaml
        :language: yaml
     """
 
     reporter = XML.SubElement(xml_parent, 'hudson.plugins.testng.Publisher')
-    if not data['pattern']:
-        raise JenkinsJobsException("A filename pattern must be specified.")
-    XML.SubElement(reporter, 'reportFilenamePattern').text = data['pattern']
-    XML.SubElement(reporter, 'escapeTestDescp').text = str(data.get(
-        'escape-test-description', True))
-    XML.SubElement(reporter, 'escapeExceptionMsg').text = str(data.get(
-        'escape-exception-msg', True))
+    reporter.set('plugin', 'testng-plugin')
+    valid_threshold_modes = ['number', 'percentage']
+    threshold_mode = data.get('threshold-mode', 'percentage')
+
+    mappings = [
+        ('pattern', 'reportFilenamePattern', None),
+        ('escape-test-description', 'escapeTestDescp', True),
+        ('escape-exception-msg', 'escapeExceptionMsg', True),
+        ('fail-on-failed-test-config', 'failureOnFailedTestConfig', False),
+        ('show-failed-builds', 'showFailedBuilds', False),
+        ('unstable-skips', 'unstableSkips', 100),
+        ('unstable-fails', 'unstableFails', 0),
+        ('failed-skips', 'failedSkips', 100),
+        ('failed-fails', 'failedFails', 100),
+    ]
+    helpers.convert_mapping_to_xml(
+        reporter, data, mappings, fail_required=True)
+
+    if threshold_mode == 'number':
+        XML.SubElement(reporter, 'thresholdMode').text = str(1)
+    elif threshold_mode == 'percentage':
+        XML.SubElement(reporter, 'thresholdMode').text = str(2)
+    else:
+        raise InvalidAttributeError(
+            'threshold-mode', threshold_mode, valid_threshold_modes)
 
 
 def artifact_deployer(parser, xml_parent, data):
@@ -4665,31 +4708,33 @@ def scan_build(parser, xml_parent, data):
         exceeds a threshold (default false)
     :arg int threshold: Threshold for marking builds as unstable (default 0)
     :arg string exclude-paths: Comma separated paths to exclude from reports
-        (default '')
+        (>=1.5) (default '')
     :arg string report-folder: Folder where generated reports are located
-        (default 'clangScanBuildReports')
+        (>=1.7) (default 'clangScanBuildReports')
 
-    Example:
+    Full Example:
 
-    .. literalinclude:: /../../tests/publishers/fixtures/scan-build001.yaml
+    .. literalinclude:: /../../tests/publishers/fixtures/scan-build-full.yaml
+       :language: yaml
+
+    Minimal Example:
+
+    .. literalinclude::
+       /../../tests/publishers/fixtures/scan-build-minimal.yaml
        :language: yaml
     """
-    threshold = str(data.get('threshold', 0))
-    if not threshold.isdigit():
-        raise JenkinsJobsException("Invalid value '%s' for threshold. "
-                                   "Numeric value expected." % threshold)
-
     p = XML.SubElement(
         xml_parent,
         'jenkins.plugins.clangscanbuild.publisher.ClangScanBuildPublisher')
+    p.set('plugin', 'clang-scanbuild')
 
-    XML.SubElement(p, 'markBuildUnstableWhenThresholdIsExceeded').text = \
-        str(data.get('mark-unstable', False)).lower()
-    XML.SubElement(p, 'bugThreshold').text = threshold
-    XML.SubElement(p, 'clangexcludedpaths').text = str(
-        data.get('exclude-paths', ''))
-    XML.SubElement(p, 'reportFolderName').text = str(
-        data.get('report-folder', 'clangScanBuildReports'))
+    mappings = [
+        ('mark-unstable', 'markBuildUnstableWhenThresholdIsExceeded', False),
+        ('threshold', 'bugThreshold', 0),
+        ('exclude-paths', 'clangexcludedpaths', ''),
+        ('report-folder', 'reportFolderName', 'clangScanBuildReports'),
+    ]
+    helpers.convert_mapping_to_xml(p, data, mappings, fail_required=True)
 
 
 def dry(parser, xml_parent, data):
@@ -4699,13 +4744,13 @@ def dry(parser, xml_parent, data):
 
     The DRY component accepts a dictionary with the following values:
 
-    :arg str pattern: Report filename pattern (optional)
+    :arg str pattern: Report filename pattern (default '')
     :arg bool can-run-on-failed: Also runs for failed builds, instead of just
       stable or unstable builds (default false)
     :arg bool should-detect-modules: Determines if Ant or Maven modules should
       be detected for all files that contain warnings (default false)
-    :arg int healthy: Sunny threshold (optional)
-    :arg int unhealthy: Stormy threshold (optional)
+    :arg int healthy: Sunny threshold (default '')
+    :arg int unhealthy: Stormy threshold (default '')
     :arg str health-threshold: Threshold priority for health status
       ('low', 'normal' or 'high', defaulted to 'low')
     :arg int high-threshold: Minimum number of duplicated lines for high
@@ -4713,7 +4758,7 @@ def dry(parser, xml_parent, data):
     :arg int normal-threshold: Minimum number of duplicated lines for normal
       priority warnings. (default 25)
     :arg dict thresholds: Mark build as failed or unstable if the number of
-      errors exceeds a threshold. (optional)
+      errors exceeds a threshold. (default '')
 
         :thresholds:
             * **unstable** (`dict`)
@@ -4746,8 +4791,7 @@ def dry(parser, xml_parent, data):
       builds where the number of warnings was decreased. (default false)
     :arg bool use-delta-values: If set then the number of new warnings is
       calculated by subtracting the total number of warnings of the current
-      build from the reference build.
-      (default false)
+      build from the reference build. (default false)
 
     Example:
 
@@ -4768,12 +4812,8 @@ def dry(parser, xml_parent, data):
     settings = [
         ('high-threshold', 'highThreshold', 50),
         ('normal-threshold', 'normalThreshold', 25)]
-
-    for key, tag_name, default in settings:
-        xml_config = XML.SubElement(xml_element, tag_name)
-        config_value = data.get(key, default)
-
-        xml_config.text = str(config_value)
+    helpers.convert_mapping_to_xml(
+        xml_element, data, settings, fail_required=True)
 
 
 def shining_panda(parser, xml_parent, data):
@@ -4907,14 +4947,15 @@ def rundeck(parser, xml_parent, data):
         xml_parent,
         'org.jenkinsci.plugins.rundeck.RundeckNotifier')
 
-    XML.SubElement(p, 'jobId').text = str(data.get('job-id'))
-    XML.SubElement(p, 'options').text = str(data.get('options', ''))
-    XML.SubElement(p, 'nodeFilters').text = str(data.get('node-filters', ''))
-    XML.SubElement(p, 'tag').text = str(data.get('tag', ''))
-    XML.SubElement(p, 'shouldWaitForRundeckJob').text = str(
-        data.get('wait-for-rundeck', False)).lower()
-    XML.SubElement(p, 'shouldFailTheBuild').text = str(
-        data.get('fail-the-build', False)).lower()
+    mappings = [
+        ('job-id', 'jobId', None),
+        ('options', 'options', ''),
+        ('node-filters', 'nodeFilters', ''),
+        ('tag', 'tag', ''),
+        ('wait-for-rundeck', 'shouldWaitForRundeckJob', False),
+        ('fail-the-build', 'shouldFailTheBuild', False),
+    ]
+    helpers.convert_mapping_to_xml(p, data, mappings, fail_required=True)
 
 
 def create_publishers(parser, action):
@@ -5151,9 +5192,9 @@ def scoverage(parser, xml_parent, data):
     Requires the Jenkins :jenkins-wiki:`Scoverage Plugin <Scoverage+Plugin>`.
 
     :arg str report-directory: This is a directory that specifies the locations
-                          where the xml scoverage report is generated
+        where the xml scoverage report is generated (required)
     :arg str report-file: This is a file name that is given to the xml
-                          scoverage report.
+        scoverage report (required)
 
     Example:
 
@@ -5163,10 +5204,14 @@ def scoverage(parser, xml_parent, data):
     scoverage = XML.SubElement(
         xml_parent,
         'org.jenkinsci.plugins.scoverage.ScoveragePublisher')
-    XML.SubElement(scoverage, 'reportDir').text = str(
-        data.get('report-directory', ''))
-    XML.SubElement(scoverage, 'reportFile').text = str(
-        data.get('report-file', ''))
+    scoverage.set('plugin', 'scoverage')
+
+    mappings = [
+        ('report-directory', 'reportDir', None),
+        ('report-file', 'reportFile', None),
+    ]
+    helpers.convert_mapping_to_xml(
+        scoverage, data, mappings, fail_required=True)
 
 
 def display_upstream_changes(parser, xml_parent, data):
@@ -5313,6 +5358,8 @@ def naginator(parser, xml_parent, data):
 
     :arg bool rerun-unstable-builds: Rerun build for unstable builds as well
         as failures (default false)
+    :arg bool rerun-matrix-part: Rerun build only for failed parts on the
+        matrix (>=1.12) (default false)
     :arg int fixed-delay: Fixed delay before retrying build (cannot be used
         with progressive-delay-increment or progressive-delay-maximum.
         This is the default delay type.  (default 0)
@@ -5341,6 +5388,8 @@ def naginator(parser, xml_parent, data):
         'regular-expression' in data).lower()
     XML.SubElement(naginator, 'rerunIfUnstable').text = str(
         data.get('rerun-unstable-builds', False)).lower()
+    XML.SubElement(naginator, 'rerunMatrixPart').text = str(
+        data.get('rerun-matrix-part', False)).lower()
     progressive_delay = ('progressive-delay-increment' in data or
                          'progressive-delay-maximum' in data)
     if 'fixed-delay' in data and progressive_delay:
@@ -5864,28 +5913,36 @@ def whitesource(parser, xml_parent, data):
     :arg list excludes: list of libraries to exclude (default '[]')
     :arg str policies: Whether to override the global settings.  Valid values:
         global, enable, disable (default 'global')
+    :arg str requester-email: Email of the WhiteSource user that requests to
+        update WhiteSource (>=1.5.1) (default '')
 
-    Example:
+    Full Example:
 
-    .. literalinclude:: /../../tests/publishers/fixtures/whitesource001.yaml
+    .. literalinclude:: /../../tests/publishers/fixtures/whitesource-full.yaml
+       :language: yaml
+
+    Minimal Example:
+
+    .. literalinclude::
+       /../../tests/publishers/fixtures/whitesource-minimal.yaml
        :language: yaml
     """
-
-    policies = ['global', 'enable', 'disable']
-    policies_value = str(data.get('policies', 'global').lower())
-    if policies_value not in policies:
-        raise InvalidAttributeError('policies', policies_value, policies)
     whitesource = XML.SubElement(xml_parent, 'org.whitesource.jenkins.'
                                              'WhiteSourcePublisher')
-    XML.SubElement(whitesource, 'jobCheckPolicies').text = policies_value
-    XML.SubElement(whitesource, 'jobApiToken').text = data.get(
-        'override-token', '')
-    XML.SubElement(whitesource, 'product').text = data.get(
-        'product-token', '')
-    XML.SubElement(whitesource, 'productVersion').text = data.get(
-        'version', '')
-    XML.SubElement(whitesource, 'projectToken').text = data.get(
-        'project-token', '')
+    whitesource.set('plugin', 'whitesource')
+    policies = ['global', 'enable', 'disable']
+
+    mappings = [
+        ('policies', 'jobCheckPolicies', 'global', policies),
+        ('override-token', 'jobApiToken', ''),
+        ('product-token', 'product', ''),
+        ('version', 'productVersion', ''),
+        ('project-token', 'projectToken', ''),
+        ('requester-email', 'requesterEmail', ''),
+    ]
+    helpers.convert_mapping_to_xml(
+        whitesource, data, mappings, fail_required=True)
+
     XML.SubElement(whitesource, 'libIncludes').text = ' '.join(
         data.get('includes', []))
     XML.SubElement(whitesource, 'libExcludes').text = ' '.join(
@@ -6165,9 +6222,9 @@ def openshift_build_canceller(parser, xml_parent, data):
     :arg str namespace: If you run `oc get bc` for the project listed in
         "namespace", that is the value you want to put here. (default 'test')
     :arg str auth-token: The value here is what you supply with the --token
-        option when invoking the OpenShift `oc` command. (optional)
-    :arg str verbose: This flag is the toggle for
-        turning on or off detailed logging in this plug-in. (default 'false')
+        option when invoking the OpenShift `oc` command. (default '')
+    :arg bool verbose: This flag is the toggle for
+        turning on or off detailed logging in this plug-in. (default false)
 
     Full Example:
 
@@ -6191,10 +6248,9 @@ def openshift_build_canceller(parser, xml_parent, data):
         ("bld-cfg", 'bldCfg', 'frontend'),
         ("namespace", 'namespace', 'test'),
         ("auth-token", 'authToken', ''),
-        ("verbose", 'verbose', 'false'),
+        ("verbose", 'verbose', False),
     ]
-
-    helpers.convert_mapping_to_xml(osb, data, mapping)
+    helpers.convert_mapping_to_xml(osb, data, mapping, fail_required=True)
 
 
 def openshift_deploy_canceller(parser, xml_parent, data):
@@ -6214,9 +6270,9 @@ def openshift_deploy_canceller(parser, xml_parent, data):
     :arg str namespace: If you run `oc get bc` for the project listed in
         "namespace", that is the value you want to put here. (default 'test')
     :arg str auth-token: The value here is what you supply with the --token
-        option when invoking the OpenShift `oc` command. (optional)
-    :arg str verbose: This flag is the toggle for
-        turning on or off detailed logging in this plug-in. (default 'false')
+        option when invoking the OpenShift `oc` command. (default '')
+    :arg bool verbose: This flag is the toggle for
+        turning on or off detailed logging in this plug-in. (default false)
 
     Full Example:
 
@@ -6240,10 +6296,9 @@ def openshift_deploy_canceller(parser, xml_parent, data):
         ("dep-cfg", 'depCfg', 'frontend'),
         ("namespace", 'namespace', 'test'),
         ("auth-token", 'authToken', ''),
-        ("verbose", 'verbose', 'false'),
+        ("verbose", 'verbose', False),
     ]
-
-    helpers.convert_mapping_to_xml(osb, data, mapping)
+    helpers.convert_mapping_to_xml(osb, data, mapping, fail_required=True)
 
 
 def github_pull_request_merge(parser, xml_parent, data):
@@ -6259,7 +6314,7 @@ def github_pull_request_merge(parser, xml_parent, data):
     :arg bool disallow-own-code: if `true` will allow merging your own pull
         requests, in opposite to needing someone else to trigger the merge.
         (default false)
-    :arg bool merge-comment: Comment to set on the merge commit (optional)
+    :arg str merge-comment: Comment to set on the merge commit (default '')
     :arg bool fail-on-non-merge: fail the job if the merge was unsuccessful
         (default false)
     :arg bool delete-on-merge: Delete the branch of the pull request on
@@ -6284,12 +6339,12 @@ def github_pull_request_merge(parser, xml_parent, data):
         # option, xml name, default value
         ("only-admins-merge", 'onlyAdminsMerge', 'false'),
         ("disallow-own-code", 'disallowOwnCode', 'false'),
-        ("merge-comment", 'mergeComment', None),
+        ("merge-comment", 'mergeComment', ''),
         ("fail-on-non-merge", 'failOnNonMerge', 'false'),
         ("delete-on-merge", 'deleteOnMerge', 'false'),
     ]
 
-    helpers.convert_mapping_to_xml(osb, data, mapping)
+    helpers.convert_mapping_to_xml(osb, data, mapping, fail_required=True)
 
 
 class Publishers(jenkins_jobs.modules.base.Base):

@@ -37,6 +37,7 @@ from jenkins_jobs.modules.helpers import artifactory_env_vars_patterns
 from jenkins_jobs.modules.helpers import artifactory_optional_props
 from jenkins_jobs.modules.helpers import artifactory_repository
 from jenkins_jobs.modules.helpers import config_file_provider_builder
+from jenkins_jobs.modules.helpers import convert_mapping_to_xml
 
 logger = logging.getLogger(__name__)
 
@@ -224,26 +225,25 @@ def logfilesize(parser, xml_parent, data):
     :arg int size: Abort the build if logfile size is bigger than this
         value (in MiB, default 128). Only applies if set-own is true.
 
-    Minimum config example:
+    Full Example:
 
-    .. literalinclude:: /../../tests/wrappers/fixtures/logfilesize002.yaml
+    .. literalinclude:: /../../tests/wrappers/fixtures/logfilesize-full.yaml
 
-    Full config example:
+    Minimal Example:
 
-    .. literalinclude:: /../../tests/wrappers/fixtures/logfilesize001.yaml
-
+    .. literalinclude:: /../../tests/wrappers/fixtures/logfilesize-minimal.yaml
     """
     lfswrapper = XML.SubElement(xml_parent,
                                 'hudson.plugins.logfilesizechecker.'
                                 'LogfilesizecheckerWrapper')
     lfswrapper.set("plugin", "logfilesizechecker")
 
-    XML.SubElement(lfswrapper, 'setOwn').text = str(
-        data.get('set-own', 'false')).lower()
-    XML.SubElement(lfswrapper, 'maxLogSize').text = str(
-        data.get('size', '128')).lower()
-    XML.SubElement(lfswrapper, 'failBuild').text = str(
-        data.get('fail', 'false')).lower()
+    mapping = [
+        ('set-own', 'setOwn', False),
+        ('size', 'maxLogSize', 128),
+        ('fail', 'failBuild', False),
+    ]
+    convert_mapping_to_xml(lfswrapper, data, mapping, fail_required=True)
 
 
 def timeout(parser, xml_parent, data):
@@ -550,21 +550,25 @@ def live_screenshot(parser, xml_parent, data):
 
     File type must be .png and they must be located inside the $WORKDIR.
 
-    Example using defaults:
+    Full Example:
 
-    .. literalinclude:: /../../tests/wrappers/fixtures/live_screenshot001.yaml
+    .. literalinclude::
+       /../../tests/wrappers/fixtures/live-screenshot-full.yaml
 
-    or specifying the files to use:
+    Minimal Example:
 
-    .. literalinclude:: /../../tests/wrappers/fixtures/live_screenshot002.yaml
+    .. literalinclude::
+       /../../tests/wrappers/fixtures/live-screenshot-minimal.yaml
     """
     live = XML.SubElement(
         xml_parent,
         'org.jenkinsci.plugins.livescreenshot.LiveScreenshotBuildWrapper')
-    XML.SubElement(live, 'fullscreenFilename').text = data.get(
-        'full-size', 'screenshot.png')
-    XML.SubElement(live, 'thumbnailFilename').text = data.get(
-        'thumbnail', 'screenshot-thumb.png')
+    live.set('plugin', 'livescreenshot')
+    mapping = [
+        ('full-size', 'fullscreenFilename', 'screenshot.png'),
+        ('thumbnail', 'thumbnailFilename', 'screenshot-thumb.png'),
+    ]
+    convert_mapping_to_xml(live, data, mapping, fail_required=True)
 
 
 def mask_passwords(parser, xml_parent, data):
@@ -1473,33 +1477,34 @@ def mongo_db(parser, xml_parent, data):
     Initalizes a MongoDB database while running the build.
     Requires the Jenkins :jenkins-wiki:`MongoDB plugin <MongoDB+Plugin>`.
 
-    :arg str name: The name of the MongoDB install to use
-    :arg str data-directory: Data directory for the server (optional)
-    :arg int port: Port for the server (optional)
-    :arg str startup-params: Startup parameters for the server (optional)
+    :arg str name: The name of the MongoDB install to use (required)
+    :arg str data-directory: Data directory for the server (default '')
+    :arg int port: Port for the server (default '')
+    :arg str startup-params: Startup parameters for the server (default '')
     :arg int start-timeout: How long to wait for the server to start in
-        milliseconds. 0 means no timeout. (default '0')
+        milliseconds. 0 means no timeout. (default 0)
 
-    Example:
+    Full Example:
 
-    .. literalinclude:: /../../tests/wrappers/fixtures/mongo-db001.yaml
+    .. literalinclude:: /../../tests/wrappers/fixtures/mongo-db-full.yaml
 
+    Minimal Example:
+
+    .. literalinclude:: /../../tests/wrappers/fixtures/mongo-db-minimal.yaml
     """
     mongodb = XML.SubElement(xml_parent,
                              'org.jenkinsci.plugins.mongodb.'
                              'MongoBuildWrapper')
     mongodb.set('plugin', 'mongodb')
 
-    if not str(data.get('name', '')):
-        raise JenkinsJobsException('The mongo install name must be specified.')
-    XML.SubElement(mongodb, 'mongodbName').text = str(data.get('name', ''))
-    XML.SubElement(mongodb, 'port').text = str(data.get('port', ''))
-    XML.SubElement(mongodb, 'dbpath').text = str(data.get(
-        'data-directory', ''))
-    XML.SubElement(mongodb, 'parameters').text = str(data.get(
-        'startup-params', ''))
-    XML.SubElement(mongodb, 'startTimeout').text = str(data.get(
-        'start-timeout', '0'))
+    mapping = [
+        ('name', 'mongodbName', None),
+        ('port', 'port', ''),
+        ('data-directory', 'dbpath', ''),
+        ('startup-params', 'parameters', ''),
+        ('start-timeout', 'startTimeout', 0),
+    ]
+    convert_mapping_to_xml(mongodb, data, mapping, fail_required=True)
 
 
 def delivery_pipeline(parser, xml_parent, data):
@@ -2283,6 +2288,55 @@ def artifactory_maven_freestyle(parser, xml_parent, data):
 
     # optional__props
     artifactory_optional_props(artifactory, data, 'wrappers')
+
+
+def maven_release(parser, xml_parent, data):
+    """yaml: maven-release
+    Wrapper for Maven projects
+    Requires :jenkins-wiki:`M2 Release Plugin <M2+Release+Plugin>`
+
+    :arg str release-goals: Release goals and options (default '')
+    :arg str dry-run-goals: DryRun goals and options (default '')
+    :arg int num-successful-builds: Number of successful release builds to keep
+        (default 1)
+    :arg bool select-custom-scm-comment-prefix: Preselect 'Specify custom SCM
+        comment prefix' (default false)
+    :arg bool select-append-jenkins-username: Preselect 'Append Jenkins
+        Username' (default false)
+    :arg bool select-scm-credentials: Preselect 'Specify SCM login/password'
+        (default false)
+    :arg str release-env-var: Release environment variable (default '')
+    :arg str scm-user-env-var: SCM username environment variable (default '')
+    :arg str scm-password-env-var: SCM password environment variable
+        (default '')
+
+    Example:
+
+    .. literalinclude:: /../../tests/wrappers/fixtures/maven-release001.yaml
+       :language: yaml
+
+    """
+    mvn_release = XML.SubElement(xml_parent,
+                                 'org.jvnet.hudson.plugins.m2release.'
+                                 'M2ReleaseBuildWrapper')
+    XML.SubElement(mvn_release, 'releaseGoals').text = str(
+        data.get('release-goals', ''))
+    XML.SubElement(mvn_release, 'dryRunGoals').text = str(
+        data.get('dry-run-goals', ''))
+    XML.SubElement(mvn_release, 'numberOfReleaseBuildsToKeep').text = str(
+        data.get('num-successful-builds', '1'))
+    XML.SubElement(mvn_release, 'selectCustomScmCommentPrefix').text = str(
+        data.get('select-custom-scm-comment-prefix', 'false')).lower()
+    XML.SubElement(mvn_release, 'selectAppendHudsonUsername').text = str(
+        data.get('select-append-jenkins-username', 'false')).lower()
+    XML.SubElement(mvn_release, 'selectScmCredentials').text = str(
+        data.get('select-scm-credentials', 'false')).lower()
+    XML.SubElement(mvn_release, 'releaseEnvVar').text = str(
+        data.get('release-env-var', ''))
+    XML.SubElement(mvn_release, 'scmUserEnvVar').text = str(
+        data.get('scm-user-env-var', ''))
+    XML.SubElement(mvn_release, 'scmPasswordEnvVar').text = str(
+        data.get('scm-password-env-var', ''))
 
 
 class Wrappers(jenkins_jobs.modules.base.Base):

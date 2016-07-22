@@ -1735,6 +1735,12 @@ def multijob(parser, xml_parent, data):
             * **restrict-matrix-project** (`str`) -- Filter that
               restricts the subset of the combinations that the
               downstream project will run (optional)
+            * **retry** (`dict`): Enable retry strategy (optional)
+                :retry:
+                    * **max-retry** (`int`) -- Max number of retries
+                      (default 0)
+                    * **strategy-path** (`str`) -- Parsing rules path
+                      (required)
 
     Example:
 
@@ -1817,6 +1823,20 @@ def multijob(parser, xml_parent, data):
         # Abort all other job
         abortAllJob = str(project.get('abort-all-job', False)).lower()
         XML.SubElement(phaseJob, 'abortAllJob').text = abortAllJob
+
+        # Retry job
+        retry = project.get('retry', False)
+        if retry:
+            try:
+                rules_path = str(retry['strategy-path'])
+                XML.SubElement(phaseJob, 'parsingRulesPath').text = rules_path
+            except KeyError:
+                raise MissingAttributeError('strategy-path')
+            max_retry = retry.get('max-retry', 0)
+            XML.SubElement(phaseJob, 'maxRetries').text = str(int(max_retry))
+            XML.SubElement(phaseJob, 'enableRetryStrategy').text = 'true'
+        else:
+            XML.SubElement(phaseJob, 'enableRetryStrategy').text = 'false'
 
         # Restrict matrix jobs to a subset
         if project.get('restrict-matrix-project') is not None:
@@ -2546,6 +2566,69 @@ def github_notifier(parser, xml_parent, data):
                    'com.cloudbees.jenkins.GitHubSetCommitStatusBuilder')
 
 
+def scan_build(parser, xml_parent, data):
+    """yaml: scan-build
+    This plugin allows you configure a build step that will execute the Clang
+    scan-build static analysis tool against an XCode project.
+
+    The scan-build report has to be generated in the directory
+    ``${WORKSPACE}/clangScanBuildReports`` for the publisher to find it.
+
+    Requires the Jenkins :jenkins-wiki:`Clang Scan-Build Plugin
+    <Clang+Scan-Build+Plugin>`.
+
+    :arg str target: Provide the exact name of the XCode target you wish to
+        have compiled and analyzed (required)
+    :arg str target-sdk: Set the simulator version of a currently installed SDK
+        (default iphonesimulator)
+    :arg str config: Provide the XCode config you wish to execute scan-build
+        against (default Debug)
+    :arg str clang-install-name: Name of clang static analyzer to use (default
+        '')
+    :arg str xcode-sub-path: Path of XCode project relative to the workspace
+        (default '')
+    :arg str workspace: Name of workspace (default '')
+    :arg str scheme: Name of scheme (default '')
+    :arg str scan-build-args: Additional arguments to clang scan-build
+        (default --use-analyzer Xcode)
+    :arg str xcode-build-args: Additional arguments to XCode (default
+        -derivedDataPath $WORKSPACE/build)
+    :arg str report-folder: Folder where generated reports are located
+        (>=1.7) (default clangScanBuildReports)
+
+    Full Example:
+
+    .. literalinclude:: /../../tests/builders/fixtures/scan-build-full.yaml
+       :language: yaml
+
+    Minimal Example:
+
+    .. literalinclude::
+       /../../tests/builders/fixtures/scan-build-minimal.yaml
+       :language: yaml
+    """
+    p = XML.SubElement(
+        xml_parent,
+        'jenkins.plugins.clangscanbuild.ClangScanBuildBuilder')
+    p.set('plugin', 'clang-scanbuild')
+
+    mappings = [
+        ('target', 'target', None),
+        ('target-sdk', 'targetSdk', 'iphonesimulator'),
+        ('config', 'config', 'Debug'),
+        ('clang-install-name', 'clangInstallationName', ''),
+        ('xcode-sub-path', 'xcodeProjectSubPath', 'myProj/subfolder'),
+        ('workspace', 'workspace', ''),
+        ('scheme', 'scheme', ''),
+        ('scan-build-args', 'scanbuildargs', '--use-analyzer Xcode'),
+        ('xcode-build-args',
+         'xcodebuildargs',
+         '-derivedDataPath $WORKSPACE/build'),
+        ('report-folder', 'outputFolderName', 'clangScanBuildReports'),
+    ]
+    convert_mapping_to_xml(p, data, mappings, fail_required=True)
+
+
 def ssh_builder(parser, xml_parent, data):
     """yaml: ssh-builder
     Executes command on remote host
@@ -2647,24 +2730,13 @@ def sonatype_clm(parser, xml_parent, data):
     clm = XML.SubElement(xml_parent,
                          'com.sonatype.insight.ci.hudson.PreBuildScan')
     clm.set('plugin', 'sonatype-clm-ci')
-
     SUPPORTED_VALUES = ['list', 'manual']
-    clm_value = data.get('value')
-    if clm_value and clm_value not in SUPPORTED_VALUES:
-        raise InvalidAttributeError('value',
-                                    clm_value,
-                                    SUPPORTED_VALUES)
     SUPPORTED_STAGES = ['build', 'stage-release', 'release', 'operate']
-    clm_stage = data.get('stage')
-    if clm_stage and clm_stage not in SUPPORTED_STAGES:
-        raise InvalidAttributeError('stage',
-                                    clm_stage,
-                                    SUPPORTED_STAGES)
 
     application_select = XML.SubElement(clm,
                                         'applicationSelectType')
     application_mappings = [
-        ('value', 'value', 'list'),
+        ('value', 'value', 'list', SUPPORTED_VALUES),
         ('application-name', 'applicationId', None),
     ]
     convert_mapping_to_xml(
@@ -2680,7 +2752,7 @@ def sonatype_clm(parser, xml_parent, data):
 
     mappings = [
         ('fail-on-clm-server-failure', 'failOnClmServerFailures', False),
-        ('stage', 'stageId', 'build'),
+        ('stage', 'stageId', 'build', SUPPORTED_STAGES),
         ('username', 'username', ''),
         ('password', 'password', ''),
     ]
@@ -2787,9 +2859,9 @@ def openshift_build_verify(parser, xml_parent, data):
     :arg str namespace: If you run `oc get bc` for the project listed in
         "namespace", that is the value you want to put here. (default 'test')
     :arg str auth-token: The value here is what you supply with the --token
-        option when invoking the OpenShift `oc` command. (optional)
-    :arg str verbose: This flag is the toggle for
-        turning on or off detailed logging in this plug-in. (default 'false')
+        option when invoking the OpenShift `oc` command. (default '')
+    :arg bool verbose: This flag is the toggle for
+        turning on or off detailed logging in this plug-in. (default false)
 
     Full Example:
 
@@ -2806,16 +2878,16 @@ def openshift_build_verify(parser, xml_parent, data):
     osb = XML.SubElement(xml_parent,
                          'com.openshift.jenkins.plugins.pipeline.'
                          'OpenShiftBuildVerifier')
+
     mapping = [
         # option, xml name, default value
         ("api-url", 'apiURL', 'https://openshift.default.svc.cluster.local'),
         ("bld-cfg", 'bldCfg', 'frontend'),
         ("namespace", 'namespace', 'test'),
         ("auth-token", 'authToken', ''),
-        ("verbose", 'verbose', 'false'),
+        ("verbose", 'verbose', False),
     ]
-
-    convert_mapping_to_xml(osb, data, mapping)
+    convert_mapping_to_xml(osb, data, mapping, fail_required=True)
 
 
 def openshift_builder(parser, xml_parent, data):
@@ -2833,17 +2905,17 @@ def openshift_builder(parser, xml_parent, data):
     :arg str namespace: If you run `oc get bc` for the project listed in
         "namespace", that is the value you want to put here. (default 'test')
     :arg str auth-token: The value here is what you supply with the --token
-        option when invoking the OpenShift `oc` command. (optional)
+        option when invoking the OpenShift `oc` command. (default '')
     :arg str commit-ID: The value here is what you supply with the
         --commit option when invoking the
-        OpenShift `oc start-build` command. (optional)
-    :arg str verbose: This flag is the toggle for
-        turning on or off detailed logging in this plug-in. (default 'false')
+        OpenShift `oc start-build` command. (default '')
+    :arg bool verbose: This flag is the toggle for
+        turning on or off detailed logging in this plug-in. (default false)
     :arg str build-name: TThe value here is what you supply with the
         --from-build option when invoking the
-        OpenShift `oc start-build` command. (optional)
-    :arg str show-build-logs: Indicates whether the build logs get dumped
-        to the console of the Jenkins build. (default 'false')
+        OpenShift `oc start-build` command. (default '')
+    :arg bool show-build-logs: Indicates whether the build logs get dumped
+        to the console of the Jenkins build. (default false)
 
 
     Full Example:
@@ -2867,12 +2939,11 @@ def openshift_builder(parser, xml_parent, data):
         ("namespace", 'namespace', 'test'),
         ("auth-token", 'authToken', ''),
         ("commit-ID", 'commitID', ''),
-        ("verbose", 'verbose', 'false'),
+        ("verbose", 'verbose', False),
         ("build-name", 'buildName', ''),
-        ("show-build-logs", 'showBuildLogs', 'false'),
+        ("show-build-logs", 'showBuildLogs', False),
     ]
-
-    convert_mapping_to_xml(osb, data, mapping)
+    convert_mapping_to_xml(osb, data, mapping, fail_required=True)
 
 
 def openshift_creator(parser, xml_parent, data):
@@ -2888,13 +2959,13 @@ def openshift_creator(parser, xml_parent, data):
         --server option on the OpenShift `oc` command.
         (default '\https://openshift.default.svc.cluster.local')
     :arg str jsonyaml: The JSON or YAML formatted text that conforms to
-        the schema for defining the various OpenShift resources. (optional)
+        the schema for defining the various OpenShift resources. (default '')
     :arg str namespace: If you run `oc get bc` for the project listed in
         "namespace", that is the value you want to put here. (default 'test')
     :arg str auth-token: The value here is what you supply with the --token
-        option when invoking the OpenShift `oc` command. (optional)
-    :arg str verbose: This flag is the toggle for
-        turning on or off detailed logging in this plug-in. (default 'false')
+        option when invoking the OpenShift `oc` command. (default '')
+    :arg bool verbose: This flag is the toggle for
+        turning on or off detailed logging in this plug-in. (default false)
 
     Full Example:
 
@@ -2911,16 +2982,16 @@ def openshift_creator(parser, xml_parent, data):
     osb = XML.SubElement(xml_parent,
                          'com.openshift.jenkins.plugins.pipeline.'
                          'OpenShiftCreator')
+
     mapping = [
         # option, xml name, default value
         ("api-url", 'apiURL', 'https://openshift.default.svc.cluster.local'),
         ("jsonyaml", 'jsonyaml', ''),
         ("namespace", 'namespace', 'test'),
         ("auth-token", 'authToken', ''),
-        ("verbose", 'verbose', 'false'),
+        ("verbose", 'verbose', False),
     ]
-
-    convert_mapping_to_xml(osb, data, mapping)
+    convert_mapping_to_xml(osb, data, mapping, fail_required=True)
 
 
 def openshift_dep_verify(parser, xml_parent, data):
@@ -2939,12 +3010,12 @@ def openshift_dep_verify(parser, xml_parent, data):
         Build on (default frontend)
     :arg str namespace: If you run `oc get bc` for the project listed in
         "namespace", that is the value you want to put here. (default test)
-    :arg str replica-count: The value here should be whatever the number
+    :arg int replica-count: The value here should be whatever the number
         of pods you want started for the deployment. (default 0)
     :arg str auth-token: The value here is what you supply with the --token
-        option when invoking the OpenShift `oc` command. (optional)
-    :arg str verbose: This flag is the toggle for
-        turning on or off detailed logging in this plug-in. (default 'false')
+        option when invoking the OpenShift `oc` command. (default '')
+    :arg bool verbose: This flag is the toggle for
+        turning on or off detailed logging in this plug-in. (default false)
 
     Full Example:
 
@@ -2969,10 +3040,9 @@ def openshift_dep_verify(parser, xml_parent, data):
         ("namespace", 'namespace', 'test'),
         ("replica-count", 'replicaCount', 0),
         ("auth-token", 'authToken', ''),
-        ("verbose", 'verbose', 'false'),
+        ("verbose", 'verbose', False),
     ]
-
-    convert_mapping_to_xml(osb, data, mapping)
+    convert_mapping_to_xml(osb, data, mapping, fail_required=True)
 
 
 def openshift_deployer(parser, xml_parent, data):
@@ -2990,9 +3060,9 @@ def openshift_deployer(parser, xml_parent, data):
     :arg str namespace: If you run `oc get bc` for the project listed in
         "namespace", that is the value you want to put here. (default 'test')
     :arg str auth-token: The value here is what you supply with the --token
-        option when invoking the OpenShift `oc` command. (optional)
-    :arg str verbose: This flag is the toggle for
-        turning on or off detailed logging in this plug-in. (default 'false')
+        option when invoking the OpenShift `oc` command. (default '')
+    :arg bool verbose: This flag is the toggle for
+        turning on or off detailed logging in this plug-in. (default false)
 
     Full Example:
 
@@ -3016,10 +3086,9 @@ def openshift_deployer(parser, xml_parent, data):
         ("dep-cfg", 'depCfg', 'frontend'),
         ("namespace", 'namespace', 'test'),
         ("auth-token", 'authToken', ''),
-        ("verbose", 'verbose', 'false'),
+        ("verbose", 'verbose', False),
     ]
-
-    convert_mapping_to_xml(osb, data, mapping)
+    convert_mapping_to_xml(osb, data, mapping, fail_required=True)
 
 
 def openshift_img_tagger(parser, xml_parent, data):
@@ -3041,9 +3110,9 @@ def openshift_img_tagger(parser, xml_parent, data):
     :arg str namespace: If you run `oc get bc` for the project listed in
         "namespace", that is the value you want to put here. (default 'test')
     :arg str auth-token: The value here is what you supply with the --token
-        option when invoking the OpenShift `oc` command. (optional)
-    :arg str verbose: This flag is the toggle for
-        turning on or off detailed logging in this plug-in. (default 'false')
+        option when invoking the OpenShift `oc` command. (default '')
+    :arg bool verbose: This flag is the toggle for
+        turning on or off detailed logging in this plug-in. (default false)
 
     Full Example:
 
@@ -3068,10 +3137,9 @@ def openshift_img_tagger(parser, xml_parent, data):
         ("prod-tag", 'prodTag', 'origin-nodejs-sample:prod'),
         ("namespace", 'namespace', 'test'),
         ("auth-token", 'authToken', ''),
-        ("verbose", 'verbose', 'false'),
+        ("verbose", 'verbose', False),
     ]
-
-    convert_mapping_to_xml(osb, data, mapping)
+    convert_mapping_to_xml(osb, data, mapping, fail_required=True)
 
 
 def openshift_scaler(parser, xml_parent, data):
@@ -3091,9 +3159,9 @@ def openshift_scaler(parser, xml_parent, data):
     :arg int replica-count: The value here should be whatever the number
         of pods you want started for the deployment. (default 0)
     :arg str auth-token: The value here is what you supply with the --token
-        option when invoking the OpenShift `oc` command. (optional)
-    :arg str verbose: This flag is the toggle for
-        turning on or off detailed logging in this plug-in. (default 'false')
+        option when invoking the OpenShift `oc` command. (default '')
+    :arg bool verbose: This flag is the toggle for
+        turning on or off detailed logging in this plug-in. (default false)
 
     Full Example:
 
@@ -3116,10 +3184,9 @@ def openshift_scaler(parser, xml_parent, data):
         ("namespace", 'namespace', 'test'),
         ("replica-count", 'replicaCount', 0),
         ("auth-token", 'authToken', ''),
-        ("verbose", 'verbose', 'false'),
+        ("verbose", 'verbose', False),
     ]
-
-    convert_mapping_to_xml(osb, data, mapping)
+    convert_mapping_to_xml(osb, data, mapping, fail_required=True)
 
 
 def openshift_svc_verify(parser, xml_parent, data):
@@ -3136,9 +3203,9 @@ def openshift_svc_verify(parser, xml_parent, data):
     :arg str namespace: If you run `oc get bc` for the project listed in
         "namespace", that is the value you want to put here. (default 'test')
     :arg str auth-token: The value here is what you supply with the --token
-        option when invoking the OpenShift `oc` command. (optional)
-    :arg str verbose: This flag is the toggle for
-        turning on or off detailed logging in this plug-in. (default 'false')
+        option when invoking the OpenShift `oc` command. (default '')
+    :arg bool verbose: This flag is the toggle for
+        turning on or off detailed logging in this plug-in. (default false)
 
     Full Example:
 
@@ -3162,10 +3229,9 @@ def openshift_svc_verify(parser, xml_parent, data):
         ("svc-name", 'svcName', 'frontend'),
         ("namespace", 'namespace', 'test'),
         ("auth-token", 'authToken', ''),
-        ("verbose", 'verbose', 'false'),
+        ("verbose", 'verbose', False),
     ]
-
-    convert_mapping_to_xml(osb, data, mapping)
+    convert_mapping_to_xml(osb, data, mapping, fail_required=True)
 
 
 def runscope(parser, xml_parent, data):

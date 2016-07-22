@@ -13,6 +13,8 @@ class TestConfigs(CmdTestsBase):
     global_conf = '/etc/jenkins_jobs/jenkins_jobs.ini'
     user_conf = os.path.join(os.path.expanduser('~'), '.config',
                              'jenkins_jobs', 'jenkins_jobs.ini')
+    local_conf = os.path.join(os.path.dirname(__file__),
+                              'jenkins_jobs.ini')
 
     def test_use_global_config(self):
         """
@@ -24,15 +26,14 @@ class TestConfigs(CmdTestsBase):
 
         with patch('os.path.isfile', return_value=True) as m_isfile:
             def side_effect(path):
-                if path == self.user_conf:
-                    return False
                 if path == self.global_conf:
                     return True
+                return False
 
             m_isfile.side_effect = side_effect
 
             with patch('io.open', return_value=conffp) as m_open:
-                entry.JenkinsJobs(args)
+                entry.JenkinsJobs(args, config_file_required=True)
                 m_open.assert_called_with(self.global_conf, 'r',
                                           encoding='utf-8')
 
@@ -48,10 +49,11 @@ class TestConfigs(CmdTestsBase):
             def side_effect(path):
                 if path == self.user_conf:
                     return True
+                return False
 
             m_isfile.side_effect = side_effect
             with patch('io.open', return_value=conffp) as m_open:
-                entry.JenkinsJobs(args)
+                entry.JenkinsJobs(args, config_file_required=True)
                 m_open.assert_called_with(self.user_conf, 'r',
                                           encoding='utf-8')
 
@@ -71,3 +73,33 @@ class TestConfigs(CmdTestsBase):
                 'non-existing.yaml']
         jenkins_jobs = entry.JenkinsJobs(args)
         self.assertRaises(IOError, jenkins_jobs.execute)
+
+    def test_config_options_not_replaced_by_cli_defaults(self):
+        """
+        Run test mode and check config settings from conf file retained
+        when non of the global CLI options are set.
+        """
+        config_file = os.path.join(self.fixtures_path,
+                                   'settings_from_config.ini')
+        args = ['--conf', config_file, 'test', 'dummy.yaml']
+        jenkins_jobs = entry.JenkinsJobs(args)
+        self.assertEqual(jenkins_jobs.jjb_config.ignore_cache, True)
+        self.assertEqual(jenkins_jobs.jjb_config.user, "jenkins_user")
+        self.assertEqual(jenkins_jobs.jjb_config.password, "jenkins_password")
+        self.assertEqual(jenkins_jobs.jjb_config.config_parser.get(
+            'job_builder', 'allow_empty_variables'), "True")
+
+    def test_config_options_overriden_by_cli(self):
+        """
+        Run test mode and check config settings from conf file retained
+        when non of the global CLI options are set.
+        """
+        args = ['--user', 'myuser', '--password', 'mypassword',
+                '--ignore-cache', '--allow-empty-variables',
+                'test', 'dummy.yaml']
+        jenkins_jobs = entry.JenkinsJobs(args)
+        self.assertEqual(jenkins_jobs.jjb_config.ignore_cache, True)
+        self.assertEqual(jenkins_jobs.jjb_config.user, "myuser")
+        self.assertEqual(jenkins_jobs.jjb_config.password, "mypassword")
+        self.assertEqual(jenkins_jobs.jjb_config.config_parser.get(
+            'job_builder', 'allow_empty_variables'), "True")

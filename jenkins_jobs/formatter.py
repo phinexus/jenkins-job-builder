@@ -66,7 +66,7 @@ def deep_format(obj, paramdict, allow_empty=False):
                 
                 ret = s
         except KeyError as exc:
-            missing_key = exc.message
+            missing_key = exc.args[0]
             desc = "%s parameter missing to format %s\nGiven:\n%s" % (
                 missing_key, obj, pformat(paramdict))
             raise JenkinsJobsException(desc)
@@ -81,7 +81,7 @@ def deep_format(obj, paramdict, allow_empty=False):
                 ret[CustomFormatter(allow_empty).format(item, **paramdict)] = \
                     deep_format(obj[item], paramdict, allow_empty)
             except KeyError as exc:
-                missing_key = exc.message
+                missing_key = exc.args[0]
                 desc = "%s parameter missing to format %s\nGiven:\n%s" % (
                     missing_key, obj, pformat(paramdict))
                 raise JenkinsJobsException(desc)
