@@ -824,20 +824,19 @@ def cobertura(parser, xml_parent, data):
     <Cobertura+Plugin>`.
 
     :arg str report-file: This is a file name pattern that can be used
-                          to locate the cobertura xml report files (optional)
+        to locate the cobertura xml report files (optional)
     :arg bool only-stable: Include only stable builds (default false)
     :arg bool fail-no-reports: fail builds if no coverage reports are found
-                               (default false)
-    :arg bool fail-unhealthy: Unhealthy projects will be failed
-                              (default false)
+        (default false)
+    :arg bool fail-unhealthy: Unhealthy projects will be failed (default false)
     :arg bool fail-unstable: Unstable projects will be failed (default false)
     :arg bool health-auto-update: Auto update threshold for health on
-                                  successful build (default false)
+        successful build (default false)
     :arg bool stability-auto-update: Auto update threshold for stability on
-                                     successful build (default false)
+        successful build (default false)
     :arg bool zoom-coverage-chart: Zoom the coverage chart and crop area below
-                                   the minimum and above the maximum coverage
-                                   of the past reports (default false)
+        the minimum and above the maximum coverage of the past reports
+        (default false)
     :arg str source-encoding: Override the source encoding (default ASCII)
     :arg dict targets:
 
@@ -1401,31 +1400,29 @@ def findbugs(parser, xml_parent, data):
     <FindBugs+Plugin>`.
 
     :arg str pattern: specifies the generated raw FindBugs XML report files,
-                      such as \*\*/findbugs.xml or \*\*/findbugsXml.xml.
-                      (default '')
+        such as \*\*/findbugs.xml or \*\*/findbugsXml.xml. (default '')
     :arg bool rank-priority: Use rank as priority (default false)
     :arg str include-files: Comma separated list of files to include.
-                            (default '')
+        (default '')
     :arg str exclude-files: Comma separated list of files to exclude.
-                            (default '')
+        (default '')
     :arg bool can-run-on-failed: Weather or not to run plug-in on failed builds
-                                 (default false)
+        (default false)
     :arg bool should-detect-modules: Determines if Ant or Maven modules should
-                                     be detected for all files that contain
-                                     warnings. (default false)
+        be detected for all files that contain warnings. (default false)
     :arg int healthy: Sunny threshold (default '')
     :arg int unhealthy: Stormy threshold (default '')
     :arg str health-threshold: Threshold priority for health status
-      ('low', 'normal' or 'high', defaulted to 'low')
+        ('low', 'normal' or 'high', defaulted to 'low')
     :arg bool dont-compute-new: If set to false, computes new warnings based on
-                                the reference build (default true)
+        the reference build (default true)
     :arg bool use-delta-values: Use delta for new warnings. (default false)
     :arg bool use-previous-build-as-reference:  If set then the number of new
-      warnings will always be calculated based on the previous build. Otherwise
-      the reference build. (default false)
+        warnings will always be calculated based on the previous build.
+        Otherwise the reference build. (default false)
     :arg bool use-stable-build-as-reference: The number of new warnings will be
-      calculated based on the last stable build, allowing reverts of unstable
-      builds where the number of warnings was decreased. (default false)
+        calculated based on the last stable build, allowing reverts of unstable
+        builds where the number of warnings was decreased. (default false)
     :arg dict thresholds:
         :thresholds:
             * **unstable** (`dict`)

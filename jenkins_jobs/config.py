@@ -23,6 +23,7 @@ import os
 from six.moves import configparser, StringIO
 
 from jenkins_jobs import builder
+from jenkins_jobs.errors import JJBConfigException
 from jenkins_jobs.errors import JenkinsJobsException
 
 __all__ = [
@@ -48,10 +49,6 @@ query_plugins_info=True
 authtoken=dummy
 send-as=Jenkins
 """
-
-
-class JJBConfigException(JenkinsJobsException):
-    pass
 
 
 class JJBConfig(object):
@@ -160,8 +157,7 @@ class JJBConfig(object):
 
         logger.debug("Config: {0}".format(config))
 
-        # check the ignore_cache setting: first from command line,
-        # if not present check from ini file
+        # check the ignore_cache setting
         if config.has_option('jenkins', 'ignore_cache'):
             logging.warn('''ignore_cache option should be moved to the
                           [job_builder] section in the config file, the one
@@ -171,6 +167,10 @@ class JJBConfig(object):
         elif config.has_option('job_builder', 'ignore_cache'):
             self.ignore_cache = config.getboolean('job_builder',
                                                   'ignore_cache')
+
+        # check the flush_cache setting
+        if config.has_option('job_builder', 'flush_cache'):
+            self.flush_cache = config.getboolean('job_builder', 'flush_cache')
 
         # Jenkins supports access as an anonymous user, which can be used to
         # ensure read-only behaviour when querying the version of plugins
