@@ -259,6 +259,7 @@ class YamlParser(object):
             logger.debug("Expanding project '{0}'".format(project['name']))
             # use a set to check for duplicate job references in projects
             seen = set()
+            if not 'project' in project: project['project'] = project['name']
             for jobspec in project.get('jobs', []):
                 if isinstance(jobspec, dict):
                     # Singleton dict containing dict of job-specific params
