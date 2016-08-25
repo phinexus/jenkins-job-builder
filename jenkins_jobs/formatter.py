@@ -29,6 +29,10 @@ def recursive_format(s, paramdict, allow_empty=False):
 	nextLBracePos = s.find('{', lbracePos+1)
 	rbracePos = s.find('}', lbracePos)
 
+	#keep {} if doubled, i.e. {{jojo}} --> {jojo}
+	if (nextLBracePos == lbracePos+1 and s[rbracePos+1] == '}'): 
+		return s[:lbracePos]+s[nextLBracePos:rbracePos]+s[rbracePos+1:]
+
 	if (lbracePos == -1): return s
 
 	while (nextLBracePos != -1 and nextLBracePos < rbracePos):
