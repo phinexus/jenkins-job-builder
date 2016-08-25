@@ -191,6 +191,32 @@ class YamlParser(object):
             return job
         return self.applyDefaults(job)
 
+    def updateAndMerge(self, baseData, mergeData):
+        for key in mergeData.keys():
+            if key.startswith('merge:'):
+                mergeVal = mergeData[key]
+                keyToMerge = key[len('merge:'):]
+                
+                if keyToMerge in baseData:
+                    baseDataVal = baseData[keyToMerge]
+                    if isinstance (baseDataVal, list):
+                        listForAdding = []
+                        if isinstance(mergeVal, list):
+                            listForAdding = [x for x in mergeVal if not x in baseDataVal]
+                        else:
+                            if not mergeVal in baseDataVal: listForAdding.append(mergeVal)
+                        baseData.update({keyToMerge: baseDataVal + listForAdding})
+                    elif isinstance(baseDataVal, dict):
+                        if isinstance (mergeVal, dict):
+                            baseDataVal.update(mergeVal)
+                        else:
+                            logger.debug("Can't merge non-dict into dict {0}. Ignoring.".format(keyToMerge))
+                else:
+                    baseData.update({keyToMerge: mergeVal})
+            else:
+                baseData.update({key: mergeData[key]})
+        return baseData
+
     def applyDefaults(self, data, override_dict=None):
         if override_dict is None:
             override_dict = {}
@@ -199,27 +225,29 @@ class YamlParser(object):
         newdata = {}
         
         #get name or list of names of defaults
-        whichdefaults = data.get('defaults', 'global')
+        defaultsList = data.get('defaults', 'global')
         
-        if not isinstance(whichdefaults, list):
-            whichdefaults = [whichdefaults]
+        if not isinstance(defaultsList, list):
+            defaultsList = [defaultsList]
                 
-        for defName in whichdefaults:        
+        for defName in defaultsList:        
             #make a local copy of the defaults named [defName]
-            defaults = copy.deepcopy(self.data.get('defaults',
-                                     {}).get(defName, {}))
+            defaults = copy.deepcopy(self.data.get('defaults',{}).get(defName, {}))
                                      
             #if defaults has defaults, apply those
             superdefaults = defaults.get('defaults', None)
             if superdefaults is not None: 
-            	newdata.update( self.applyDefaults(defaults) ) 
+            	#newdata.update( self.applyDefaults(defaults) ) 
+                newdata = self.updateAndMerge(newdata, self.applyDefaults(defaults))
             
             #if it is blank, but was specified by name, there's a problem                         
             if defaults == {} and defName != 'global':
                 raise JenkinsJobsException("Unknown defaults set: '{0}'"
                                            .format(defName))
             #lay it into the return data                               
-            newdata.update(defaults)
+#           newdata.update(defaults)
+            newdata = self.updateAndMerge(newdata, defaults)
+
             
         #lay the override_dict (parameter) into the return data
         for key in override_dict.keys():
