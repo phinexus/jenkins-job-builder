@@ -383,6 +383,8 @@ class YamlParser(object):
             if jobs_glob and not matches(job_name, jobs_glob):
                 continue
 
+            expanded = deep_format(expanded,expanded)
+
             self.formatDescription(expanded)
             self.jobs.append(expanded)
 
