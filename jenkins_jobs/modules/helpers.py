@@ -95,15 +95,12 @@ def config_file_provider_builder(xml_parent, data):
     for file in files:
         xml_file = XML.SubElement(xml_files, 'org.jenkinsci.plugins.'
                                   'configfiles.buildwrapper.ManagedFile')
-        file_id = file.get('file-id')
-        if file_id is None:
-            raise JenkinsJobsException("file-id is required for each "
-                                       "managed configuration file")
-        XML.SubElement(xml_file, 'fileId').text = str(file_id)
-        XML.SubElement(xml_file, 'targetLocation').text = file.get(
-            'target', '')
-        XML.SubElement(xml_file, 'variable').text = file.get(
-            'variable', '')
+        mapping = [
+            ('file-id', 'fileId', None),
+            ('target', 'targetLocation', ''),
+            ('variable', 'variable', ''),
+        ]
+        convert_mapping_to_xml(xml_file, file, mapping, fail_required=True)
 
 
 def config_file_provider_settings(xml_parent, data):
@@ -242,17 +239,16 @@ def copyartifact_build_selector(xml_parent, data, select_tag='selector'):
 
 def findbugs_settings(xml_parent, data):
     # General Options
-    rank_priority = str(data.get('rank-priority', False)).lower()
-    XML.SubElement(xml_parent, 'isRankActivated').text = rank_priority
-    include_files = data.get('include-files', '')
-    XML.SubElement(xml_parent, 'includePattern').text = include_files
-    exclude_files = data.get('exclude-files', '')
-    XML.SubElement(xml_parent, 'excludePattern').text = exclude_files
+    mapping = [
+        ('rank-priority', 'isRankActivated', False),
+        ('include-files', 'includePattern', ''),
+        ('exclude-files', 'excludePattern', ''),
+    ]
+    convert_mapping_to_xml(xml_parent, data, mapping, fail_required=True)
 
 
-def get_value_from_yaml_or_config_file(key, section, data, parser):
+def get_value_from_yaml_or_config_file(key, section, data, jjb_config):
     result = data.get(key, '')
-    jjb_config = parser.jjb_config
     if result == '':
         result = jjb_config.get_module_config(section, key)
     return result
@@ -484,14 +480,23 @@ def convert_mapping_to_xml(parent, data, mapping, fail_required=False):
     valid_options provides a way to check if the value the user input is from a
     list of available options. When the user pass a value that is not supported
     from the list, it raise an InvalidAttributeError.
+
+    valid_dict provides a way to set options through their key and value. If
+    the user input corresponds to a key, the XML tag will use the key's value
+    for its element. When the user pass a value that there are no keys for,
+    it raise an InvalidAttributeError.
     """
     for elem in mapping:
         (optname, xmlname, val) = elem[:3]
         val = data.get(optname, val)
 
         valid_options = []
+        valid_dict = {}
         if len(elem) == 4:
-            valid_options = elem[3]
+            if type(elem[3]) is list:
+                valid_options = elem[3]
+            if type(elem[3]) is dict:
+                valid_dict = elem[3]
 
         # Use fail_required setting to allow support for optional parameters
         # we will phase this out in the future as we rework plugins so that
@@ -505,10 +510,18 @@ def convert_mapping_to_xml(parent, data, mapping, fail_required=False):
         if val is None and fail_required is False:
             continue
 
+        if valid_dict:
+            if val not in valid_dict:
+                raise InvalidAttributeError(optname, val, valid_dict.keys())
+
         if valid_options:
             if val not in valid_options:
                 raise InvalidAttributeError(optname, val, valid_options)
 
         if type(val) == bool:
             val = str(val).lower()
-        XML.SubElement(parent, xmlname).text = str(val)
+
+        if val in valid_dict:
+            XML.SubElement(parent, xmlname).text = str(valid_dict[val])
+        else:
+            XML.SubElement(parent, xmlname).text = str(val)

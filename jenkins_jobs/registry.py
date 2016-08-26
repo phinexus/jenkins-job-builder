@@ -24,6 +24,10 @@ import types
 from jenkins_jobs.errors import JenkinsJobsException
 from jenkins_jobs.formatter import deep_format
 
+__all__ = [
+    "ModuleRegistry"
+]
+
 logger = logging.getLogger(__name__)
 
 
@@ -118,8 +122,14 @@ class ModuleRegistry(object):
     def getHandler(self, category, name):
         return self.handlers[category][name]
 
-    def dispatch(self, component_type,
-                 parser, xml_parent,
+    @property
+    def parser_data(self):
+        return self.__parser_data
+
+    def set_parser_data(self, parser_data):
+        self.__parser_data = parser_data
+
+    def dispatch(self, component_type, xml_parent,
                  component, template_data={}):
         """This is a method that you can call from your implementation of
         Base.gen_xml or component.  It allows modules to define a type
@@ -219,24 +229,23 @@ class ModuleRegistry(object):
                          component_list_type, eps)
 
         # check for macro first
-        component = parser.data.get(component_type, {}).get(name)
+        component = self.parser_data.get(component_type, {}).get(name)
         if component:
             if name in eps and name not in self.masked_warned:
-                # Warn only once for each macro
                 self.masked_warned[name] = True
-                logger.warn("You have a macro ('%s') defined for '%s' "
-                            "component type that is masking an inbuilt "
-                            "definition" % (name, component_type))
+                logger.warning(
+                    "You have a macro ('%s') defined for '%s' "
+                    "component type that is masking an inbuilt "
+                    "definition" % (name, component_type))
 
             for b in component[component_list_type]:
                 # Pass component_data in as template data to this function
                 # so that if the macro is invoked with arguments,
                 # the arguments are interpolated into the real defn.
-                self.dispatch(component_type,
-                              parser, xml_parent, b, component_data)
+                self.dispatch(component_type, xml_parent, b, component_data)
         elif name in eps:
             func = eps[name].load()
-            func(parser, xml_parent, component_data)
+            func(self, xml_parent, component_data)
         else:
             raise JenkinsJobsException("Unknown entry point or macro '{0}' "
                                        "for component type: '{1}'.".

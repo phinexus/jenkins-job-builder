@@ -46,7 +46,7 @@ import jenkins_jobs.modules.base
 from jenkins_jobs.modules.helpers import convert_mapping_to_xml
 
 
-def git(parser, xml_parent, data):
+def git(registry, xml_parent, data):
     """yaml: git
     Specifies the git SCM repository for this job.
     Requires the Jenkins :jenkins-wiki:`Git Plugin <Git+Plugin>`.
@@ -264,10 +264,11 @@ def git(parser, xml_parent, data):
         submodule_cfgs = ['disable-submodules', 'recursive-submodules']
         if optname in submodule_cfgs:
             if optname in data:
-                logger.warn("'{0}' is deprecated, please convert to use the "
-                            "'submodule' section instead as support for this "
-                            "top level option will be removed in a future "
-                            "release.".format(optname))
+                logger.warning(
+                    "'{0}' is deprecated, please convert to use the "
+                    "'submodule' section instead as support for this "
+                    "top level option will be removed in a future "
+                    "release.".format(optname))
             if 'submodule' in data:
                 continue
 
@@ -312,9 +313,10 @@ def git(parser, xml_parent, data):
         if isinstance(data['clean'], bool):
             clean_after = data['clean']
             clean_before = False
-            logger.warn("'clean: bool' configuration format is deprecated, "
-                        "please use the extension style format to configure "
-                        "this option.")
+            logger.warning(
+                "'clean: bool' configuration format is deprecated, "
+                "please use the extension style format to configure "
+                "this option.")
         else:
             clean_after = data['clean'].get('after', False)
             clean_before = data['clean'].get('before', False)
@@ -476,7 +478,7 @@ def git(parser, xml_parent, data):
                 data.get('repo-name', ''))
 
 
-def cvs(parser, xml_parent, data):
+def cvs(registry, xml_parent, data):
     """yaml: cvs
     Specifies the CVS SCM repository for this job.
     Requires the Jenkins :jenkins-wiki:`CVS Plugin <CVS+Plugin>`.
@@ -606,24 +608,24 @@ def cvs(parser, xml_parent, data):
             data.get(opt, val)).lower()
 
 
-def repo(parser, xml_parent, data):
+def repo(registry, xml_parent, data):
     """yaml: repo
     Specifies the repo SCM repository for this job.
     Requires the Jenkins :jenkins-wiki:`Repo Plugin <Repo+Plugin>`.
 
-    :arg str manifest-url: URL of the repo manifest
-    :arg str manifest-branch: The branch of the manifest to use (optional)
+    :arg str manifest-url: URL of the repo manifest (required)
+    :arg str manifest-branch: The branch of the manifest to use (default '')
     :arg str manifest-file: Initial manifest file to use when initialising
-        (optional)
+        (default '')
     :arg str manifest-group: Only retrieve those projects in the manifest
-        tagged with the provided group name (optional)
+        tagged with the provided group name (default '')
     :arg list(str) ignore-projects: a list of projects in which changes would
-        not be considered to trigger a build when pooling (optional)
+        not be considered to trigger a build when pooling (default '')
     :arg str destination-dir: Location relative to the workspace root to clone
-        under (optional)
-    :arg str repo-url: custom url to retrieve the repo application (optional)
+        under (default '')
+    :arg str repo-url: custom url to retrieve the repo application (default '')
     :arg str mirror-dir: Path to mirror directory to reference when
-        initialising (optional)
+        initialising (default '')
     :arg int jobs: Number of projects to fetch simultaneously (default 0)
     :arg int depth: Specify the depth in history to sync from the source. The
         default is to sync all of the history. Use 1 to just sync the most
@@ -643,7 +645,7 @@ def repo(parser, xml_parent, data):
     :arg bool show-all-changes: When this is checked --first-parent is no
         longer passed to git log when determining changesets (default false)
     :arg str local-manifest: Contents of .repo/local_manifest.xml, written
-        prior to calling sync (optional)
+        prior to calling sync (default '')
 
     Example:
 
@@ -653,43 +655,27 @@ def repo(parser, xml_parent, data):
     scm = XML.SubElement(xml_parent,
                          'scm', {'class': 'hudson.plugins.repo.RepoScm'})
 
-    if 'manifest-url' in data:
-        XML.SubElement(scm, 'manifestRepositoryUrl').text = \
-            data['manifest-url']
-    else:
-        raise JenkinsJobsException("Must specify a manifest url")
-
     mapping = [
         # option, xml name, default value
-        ("manifest-branch", 'manifestBranch', ''),
-        ("manifest-file", 'manifestFile', ''),
-        ("manifest-group", 'manifestGroup', ''),
-        ("destination-dir", 'destinationDir', ''),
-        ("repo-url", 'repoUrl', ''),
-        ("mirror-dir", 'mirrorDir', ''),
-        ("jobs", 'jobs', 0),
-        ("depth", 'depth', 0),
-        ("current-branch", 'currentBranch', True),
-        ("reset-first", 'resetFirst', False),
-        ("quiet", 'quiet', True),
-        ("force-sync", 'forceSync', False),
-        ("no-tags", 'noTags', False),
-        ("trace", 'trace', False),
-        ("show-all-changes", 'showAllChanges', False),
-        ("local-manifest", 'localManifest', ''),
+        ('manifest-url', 'manifestRepositoryUrl', None),
+        ('manifest-branch', 'manifestBranch', ''),
+        ('manifest-file', 'manifestFile', ''),
+        ('manifest-group', 'manifestGroup', ''),
+        ('destination-dir', 'destinationDir', ''),
+        ('repo-url', 'repoUrl', ''),
+        ('mirror-dir', 'mirrorDir', ''),
+        ('jobs', 'jobs', 0),
+        ('depth', 'depth', 0),
+        ('current-branch', 'currentBranch', True),
+        ('reset-first', 'resetFirst', False),
+        ('quiet', 'quiet', True),
+        ('force-sync', 'forceSync', False),
+        ('no-tags', 'noTags', False),
+        ('trace', 'trace', False),
+        ('show-all-changes', 'showAllChanges', False),
+        ('local-manifest', 'localManifest', ''),
     ]
-
-    for elem in mapping:
-        (optname, xmlname, val) = elem
-        val = data.get(optname, val)
-        # Skip adding xml entry if default is empty string and no value given
-        if not val and elem[2] is '':
-            continue
-        xe = XML.SubElement(scm, xmlname)
-        if type(elem[2]) == bool:
-            xe.text = str(val).lower()
-        else:
-            xe.text = str(val)
+    convert_mapping_to_xml(scm, data, mapping, fail_required=True)
 
     # ignore-projects does not follow the same pattern of the other parameters,
     # so process it here:
@@ -699,7 +685,7 @@ def repo(parser, xml_parent, data):
         XML.SubElement(ip, 'string').text = str(ignored_project)
 
 
-def store(parser, xml_parent, data):
+def store(registry, xml_parent, data):
     """yaml: store
     Specifies the Visualworks Smalltalk Store repository for this job.
     Requires the Jenkins :jenkins-wiki:`Visualworks Smalltalk Store Plugin
@@ -761,7 +747,7 @@ def store(parser, xml_parent, data):
         XML.SubElement(scm, 'generateParcelBuilderInputFile').text = 'false'
 
 
-def svn(parser, xml_parent, data):
+def svn(registry, xml_parent, data):
     """yaml: svn
     Specifies the svn SCM repository for this job.
 
@@ -888,7 +874,7 @@ def svn(parser, xml_parent, data):
             xe.text = str(val)
 
 
-def tfs(parser, xml_parent, data):
+def tfs(registry, xml_parent, data):
     """yaml: tfs
     Specifies the Team Foundation Server repository for this job.
     Requires the Jenkins :jenkins-wiki:`Team Foundation Server Plugin
@@ -986,7 +972,7 @@ def tfs(parser, xml_parent, data):
                                                   'Browser'})
 
 
-def workspace(parser, xml_parent, data):
+def workspace(registry, xml_parent, data):
     """yaml: workspace
     Specifies the cloned workspace for this job to use as a SCM source.
     Requires the Jenkins :jenkins-wiki:`Clone Workspace SCM Plugin
@@ -1126,7 +1112,7 @@ def hg(self, xml_parent, data):
                                        "with browser.")
 
 
-def openshift_img_streams(parser, xml_parent, data):
+def openshift_img_streams(registry, xml_parent, data):
     """yaml: openshift-img-streams
     Rather than a Build step extension plugin, this is an extension of the
     Jenkins SCM plugin, where this baked-in polling mechanism provided by
@@ -1181,7 +1167,7 @@ def openshift_img_streams(parser, xml_parent, data):
     convert_mapping_to_xml(scm, data, mapping, fail_required=True)
 
 
-def bzr(parser, xml_parent, data):
+def bzr(registry, xml_parent, data):
     """yaml: bzr
     Specifies the bzr SCM repository for this job.
     Requires the Jenkins :jenkins-wiki:`Bazaar Plugin <Bazaar+Plugin>`.
@@ -1240,7 +1226,7 @@ def bzr(parser, xml_parent, data):
             data['opengrok-root-module'])
 
 
-def url(parser, xml_parent, data):
+def url(registry, xml_parent, data):
     """yaml: url
 
     Watch for changes in, and download an artifact from a particular url.
@@ -1278,10 +1264,10 @@ class SCM(jenkins_jobs.modules.base.Base):
     component_type = 'scm'
     component_list_type = 'scm'
 
-    def gen_xml(self, parser, xml_parent, data):
+    def gen_xml(self, xml_parent, data):
         scms_parent = XML.Element('scms')
         for scm in data.get('scm', []):
-            self.registry.dispatch('scm', parser, scms_parent, scm)
+            self.registry.dispatch('scm', scms_parent, scm)
         scms_count = len(scms_parent)
         if scms_count == 0:
             XML.SubElement(xml_parent, 'scm', {'class': 'hudson.scm.NullSCM'})

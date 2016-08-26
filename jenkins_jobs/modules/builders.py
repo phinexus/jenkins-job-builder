@@ -53,11 +53,12 @@ from jenkins_jobs.modules.helpers import config_file_provider_settings
 from jenkins_jobs.modules.helpers import convert_mapping_to_xml
 from jenkins_jobs.modules.helpers import copyartifact_build_selector
 from jenkins_jobs.modules import hudson_model
+from jenkins_jobs.modules.publishers import ssh
 
 logger = logging.getLogger(__name__)
 
 
-def shell(parser, xml_parent, data):
+def shell(registry, xml_parent, data):
     """yaml: shell
     Execute a shell command.
 
@@ -73,7 +74,7 @@ def shell(parser, xml_parent, data):
     XML.SubElement(shell, 'command').text = data
 
 
-def python(parser, xml_parent, data):
+def python(registry, xml_parent, data):
     """yaml: python
     Execute a python command. Requires the Jenkins :jenkins-wiki:`Python plugin
     <Python+Plugin>`.
@@ -90,7 +91,7 @@ def python(parser, xml_parent, data):
     XML.SubElement(python, 'command').text = data
 
 
-def copyartifact(parser, xml_parent, data):
+def copyartifact(registry, xml_parent, data):
     """yaml: copyartifact
 
     Copy artifact from another project. Requires the :jenkins-wiki:`Copy
@@ -162,26 +163,23 @@ def copyartifact(parser, xml_parent, data):
        :language: yaml
     """
     t = XML.SubElement(xml_parent, 'hudson.plugins.copyartifact.CopyArtifact')
-    # Warning: this only works with copy artifact version 1.26+,
-    # for copy artifact version 1.25- the 'projectName' element needs
-    # to be used instead of 'project'
-    try:
-        XML.SubElement(t, 'project').text = data["project"]
-    except KeyError:
-        raise MissingAttributeError('project')
-    XML.SubElement(t, 'filter').text = data.get("filter", "")
-    XML.SubElement(t, 'target').text = data.get("target", "")
-    flatten = data.get("flatten", False)
-    XML.SubElement(t, 'flatten').text = str(flatten).lower()
-    optional = data.get('optional', False)
-    XML.SubElement(t, 'optional').text = str(optional).lower()
-    XML.SubElement(t, 'doNotFingerprintArtifacts').text = str(
-        data.get('do-not-fingerprint', False)).lower()
-    XML.SubElement(t, 'parameters').text = data.get("parameter-filters", "")
+    mappings = [
+        # Warning: this only works with copy artifact version 1.26+,
+        # for copy artifact version 1.25- the 'projectName' element needs
+        # to be used instead of 'project'
+        ('project', 'project', None),
+        ('filter', 'filter', ''),
+        ('target', 'target', ''),
+        ('flatten', 'flatten', False),
+        ('optional', 'optional', False),
+        ('do-not-fingerprint', 'doNotFingerprintArtifacts', False),
+        ('parameter-filters', 'parameters', '')
+    ]
+    convert_mapping_to_xml(t, data, mappings, fail_required=True)
     copyartifact_build_selector(t, data)
 
 
-def change_assembly_version(parser, xml_parent, data):
+def change_assembly_version(registry, xml_parent, data):
     """yaml: change-assembly-version
     Change the assembly version.
     Requires the Jenkins :jenkins-wiki:`Change Assembly Version
@@ -205,7 +203,36 @@ def change_assembly_version(parser, xml_parent, data):
         data.get('assembly-file', 'AssemblyInfo.cs'))
 
 
-def ant(parser, xml_parent, data):
+def fingerprint(registry, xml_parent, data):
+    """yaml: fingerprint
+    Adds the ability to generate fingerprints as build steps instead of waiting
+    for a build to complete. Requires the Jenkins :jenkins-wiki:`Fingerprint
+    Plugin <Fingerprint+Plugin>`.
+
+    :arg str targets: Files to fingerprint (default '')
+
+    Full Example:
+
+    .. literalinclude::
+        /../../tests/builders/fixtures/fingerprint-full.yaml
+       :language: yaml
+
+    Minimal Example:
+
+    .. literalinclude::
+        /../../tests/builders/fixtures/fingerprint-minimal.yaml
+       :language: yaml
+    """
+
+    fingerprint = XML.SubElement(
+        xml_parent, 'hudson.plugins.createfingerprint.CreateFingerprint')
+    fingerprint.set('plugin', 'create-fingerprint')
+
+    mapping = [('targets', 'targets', '')]
+    convert_mapping_to_xml(fingerprint, data, mapping, fail_required=True)
+
+
+def ant(registry, xml_parent, data):
     """yaml: ant
     Execute an ant target. Requires the Jenkins :jenkins-wiki:`Ant Plugin
     <Ant+Plugin>`.
@@ -272,7 +299,7 @@ def ant(parser, xml_parent, data):
     XML.SubElement(ant, 'antName').text = data.get('ant-name', 'default')
 
 
-def trigger_remote(parser, xml_parent, data):
+def trigger_remote(registry, xml_parent, data):
     """yaml: trigger-remote
     Trigger build of job on remote Jenkins instance.
 
@@ -364,7 +391,7 @@ def trigger_remote(parser, xml_parent, data):
     XML.SubElement(triggerr, 'overrideAuth').text = "false"
 
 
-def trigger_builds(parser, xml_parent, data):
+def trigger_builds(registry, xml_parent, data):
     """yaml: trigger-builds
     Trigger builds of other jobs.
     Requires the Jenkins :jenkins-wiki:`Parameterized Trigger Plugin
@@ -703,7 +730,7 @@ def trigger_builds(parser, xml_parent, data):
         xml_parent.remove(tbuilder)
 
 
-def builders_from(parser, xml_parent, data):
+def builders_from(registry, xml_parent, data):
     """yaml: builders-from
     Use builders from another project.
     Requires the Jenkins :jenkins-wiki:`Template Project Plugin
@@ -721,7 +748,7 @@ def builders_from(parser, xml_parent, data):
     XML.SubElement(pbs, 'projectName').text = data
 
 
-def http_request(parser, xml_parent, data):
+def http_request(registry, xml_parent, data):
     """yaml: http-request
     This plugin sends a http request to an url with some parameters.
     Requires the Jenkins :jenkins-wiki:`HTTP Request Plugin
@@ -788,34 +815,16 @@ def http_request(parser, xml_parent, data):
                                   'jenkins.plugins.http__request.HttpRequest')
     http_request.set('plugin', 'http_request')
 
-    valid_modes = ['GET',
-                   'POST',
-                   'PUT',
-                   'DELETE',
-                   'HEAD']
-    valid_types = ['NOT_SET',
-                   'TEXT_HTML',
-                   'APPLICATION_JSON',
-                   'APPLICATION_TAR',
-                   'APPLICATION_ZIP',
+    valid_modes = ['GET', 'POST', 'PUT', 'DELETE', 'HEAD']
+    valid_types = ['NOT_SET', 'TEXT_HTML', 'APPLICATION_JSON',
+                   'APPLICATION_TAR', 'APPLICATION_ZIP',
                    'APPLICATION_OCTETSTREAM']
-
-    if data.get('mode', valid_modes[0]) not in valid_modes:
-        raise InvalidAttributeError('mode', data.get('mode'), valid_modes)
-    if data.get('content-type', valid_types[0]) not in valid_types:
-        raise InvalidAttributeError('content-type',
-                                    data.get('content-type'),
-                                    valid_types)
-    if data.get('accept-type', valid_types[0]) not in valid_types:
-        raise InvalidAttributeError('accept-type',
-                                    data.get('accept-type'),
-                                    valid_types)
 
     mappings = [
         ('url', 'url', None),
-        ('mode', 'httpMode', 'GET'),
-        ('content-type', 'contentType', 'NOT_SET'),
-        ('accept-type', 'acceptType', 'NOT_SET'),
+        ('mode', 'httpMode', 'GET', valid_modes),
+        ('content-type', 'contentType', 'NOT_SET', valid_types),
+        ('accept-type', 'acceptType', 'NOT_SET', valid_types),
         ('output-file', 'outputFile', ''),
         ('console-log', 'consoleLogResponseBody', False),
         ('pass-build', 'passBuildParameters', False),
@@ -842,7 +851,7 @@ def http_request(parser, xml_parent, data):
                                    fail_required=True)
 
 
-def inject(parser, xml_parent, data):
+def inject(registry, xml_parent, data):
     """yaml: inject
     Inject an environment for the job.
     Requires the Jenkins :jenkins-wiki:`EnvInject Plugin
@@ -870,7 +879,80 @@ def inject(parser, xml_parent, data):
         info, 'scriptContent', data.get('script-content'))
 
 
-def artifact_resolver(parser, xml_parent, data):
+def kmap(registry, xml_parent, data):
+    """yaml: kmap
+    Publish mobile applications to your Keivox KMAP Private Mobile App Store.
+    Requires the Jenkins :jenkins-wiki:`Keivox KMAP Private Mobile App Store
+    Plugin <Keivox+KMAP+Private+Mobile+App+Store+Plugin>`.
+
+    :arg str username: KMAP's user email with permissions to upload/publish
+        applications to KMAP (required)
+    :arg str password:  Password for the KMAP user uploading/publishing
+        applications (required)
+    :arg str url: KMAP's url. This url must always end with "/kmap-client/".
+        For example: http://testing.keivox.com/kmap-client/ (required)
+    :arg str categories: Categories' names. If you want to add the application
+        to more than one category, write the categories between commas.
+        (required)
+    :arg str file-path: Path to the application's file (required)
+    :arg str app-name: KMAP's application name (required)
+    :arg str bundle: Bundle indentifier (default '')
+    :arg str version: Application's version (required)
+    :arg str description: Application's description (default '')
+    :arg str icon-path: Path to the application's icon (default '')
+    :arg bool publish-optional: Publish application after it has been uploaded
+        to KMAP (default false)
+
+        :publish-optional:
+            * **groups** ('str') -- groups' names to publish the application
+                (default '')
+            * **users** ('str') -- users' names to publish the application
+                (default '')
+            * **notify-users** ('bool') -- Send notifications to the users and
+                groups when publishing the application (default false)
+
+    Minimal Example:
+
+    .. literalinclude:: ../../tests/builders/fixtures/kmap-minimal.yaml
+       :language: yaml
+
+    Full Example:
+
+    .. literalinclude:: ../../tests/builders/fixtures/kmap-full.yaml
+       :language: yaml
+    """
+    kmap = XML.SubElement(
+        xml_parent, 'org.jenkinsci.plugins.KmapJenkinsBuilder')
+
+    kmap.set('plugin', 'kmap-jenkins')
+    publish = data.get('publish-optional', False)
+
+    mapping = [
+        ('username', 'username', None),
+        ('password', 'password', None),
+        ('url', 'kmapClient', None),
+        ('categories', 'categories', None),
+        ('file-path', 'filePath', None),
+        ('app-name', 'appName', None),
+        ('bundle', 'bundle', ''),
+        ('version', 'version', None),
+        ('description', 'description', ''),
+        ('icon-path', 'iconPath', ''),
+    ]
+    convert_mapping_to_xml(kmap, data, mapping, fail_required=True)
+
+    if publish is True:
+        publish_optional = XML.SubElement(kmap, 'publishOptional')
+        publish_mapping = [
+            ('groups', 'teams', ''),
+            ('users', 'users', ''),
+            ('notify-users', 'sendNotifications', False),
+        ]
+        convert_mapping_to_xml(
+            publish_optional, data, publish_mapping, fail_required=True)
+
+
+def artifact_resolver(registry, xml_parent, data):
     """yaml: artifact-resolver
     Allows one to resolve artifacts from a maven repository like nexus
     (without having maven installed)
@@ -926,7 +1008,7 @@ def artifact_resolver(parser, xml_parent, data):
     XML.SubElement(ar, 'releaseChecksumPolicy').text = 'warn'
 
 
-def doxygen(parser, xml_parent, data):
+def doxygen(registry, xml_parent, data):
     """yaml: doxygen
     Builds doxygen HTML documentation. Requires the Jenkins
     :jenkins-wiki:`Doxygen plugin <Doxygen+Plugin>`.
@@ -946,19 +1028,16 @@ def doxygen(parser, xml_parent, data):
     """
     doxygen = XML.SubElement(xml_parent,
                              'hudson.plugins.doxygen.DoxygenBuilder')
-    try:
-        XML.SubElement(doxygen, 'doxyfilePath').text = str(data['doxyfile'])
-        XML.SubElement(doxygen, 'installationName').text = str(data['install'])
-    except KeyError as e:
-        raise MissingAttributeError(e.arg[0])
-
-    XML.SubElement(doxygen, 'continueOnBuildFailure').text = str(
-        data.get('ignore-failure', False)).lower()
-    XML.SubElement(doxygen, 'unstableIfWarnings').text = str(
-        data.get('unstable-warning', False)).lower()
+    mappings = [
+        ('doxyfile', 'doxyfilePath', None),
+        ('install', 'installationName', None),
+        ('ignore-failure', 'continueOnBuildFailure', False),
+        ('unstable-warning', 'unstableIfWarnings', False)
+    ]
+    convert_mapping_to_xml(doxygen, data, mappings, fail_required=True)
 
 
-def gradle(parser, xml_parent, data):
+def gradle(registry, xml_parent, data):
     """yaml: gradle
     Execute gradle tasks. Requires the Jenkins :jenkins-wiki:`Gradle Plugin
     <Gradle+Plugin>`.
@@ -1021,7 +1100,7 @@ def _groovy_common_scriptSource(data):
     return scriptSource
 
 
-def groovy(parser, xml_parent, data):
+def groovy(registry, xml_parent, data):
     """yaml: groovy
     Execute a groovy script or command.
     Requires the Jenkins :jenkins-wiki:`Groovy Plugin <Groovy+plugin>`.
@@ -1065,7 +1144,7 @@ def groovy(parser, xml_parent, data):
     XML.SubElement(groovy, 'classPath').text = str(data.get('class-path', ""))
 
 
-def system_groovy(parser, xml_parent, data):
+def system_groovy(registry, xml_parent, data):
     """yaml: system-groovy
     Execute a system groovy script or command.
     Requires the Jenkins :jenkins-wiki:`Groovy Plugin <Groovy+plugin>`.
@@ -1096,7 +1175,7 @@ def system_groovy(parser, xml_parent, data):
         data.get('class-path', ""))
 
 
-def batch(parser, xml_parent, data):
+def batch(registry, xml_parent, data):
     """yaml: batch
     Execute a batch command.
 
@@ -1111,7 +1190,7 @@ def batch(parser, xml_parent, data):
     XML.SubElement(batch, 'command').text = data
 
 
-def powershell(parser, xml_parent, data):
+def powershell(registry, xml_parent, data):
     """yaml: powershell
     Execute a powershell command. Requires the :jenkins-wiki:`Powershell Plugin
     <PowerShell+Plugin>`.
@@ -1127,45 +1206,54 @@ def powershell(parser, xml_parent, data):
     XML.SubElement(ps, 'command').text = data
 
 
-def msbuild(parser, xml_parent, data):
+def msbuild(registry, xml_parent, data):
     """yaml: msbuild
     Build .NET project using msbuild. Requires the :jenkins-wiki:`Jenkins
     MSBuild Plugin <MSBuild+Plugin>`.
 
     :arg str msbuild-version: which msbuild configured in Jenkins to use
-        (optional)
-    :arg str solution-file: location of the solution file to build
-    :arg str extra-parameters: extra parameters to pass to msbuild (optional)
+        (default '(Default)')
+    :arg str solution-file: location of the solution file to build (required)
+    :arg str extra-parameters: extra parameters to pass to msbuild (default '')
     :arg bool pass-build-variables: should build variables be passed
         to msbuild (default true)
     :arg bool continue-on-build-failure: should the build continue if
         msbuild returns an error (default false)
+    :arg bool unstable-if-warnings: If set to true and warnings on compilation,
+        the build will be unstable (>=1.20) (default false)
 
-    Example:
+    Full Example:
 
-    .. literalinclude:: ../../tests/builders/fixtures/msbuild.yaml
+    .. literalinclude:: ../../tests/builders/fixtures/msbuild-full.yaml
+       :language: yaml
+
+    Minimal Example:
+
+    .. literalinclude:: ../../tests/builders/fixtures/msbuild-minimal.yaml
        :language: yaml
     """
     msbuilder = XML.SubElement(xml_parent,
                                'hudson.plugins.msbuild.MsBuildBuilder')
-    XML.SubElement(msbuilder, 'msBuildName').text = data.get('msbuild-version',
-                                                             '(Default)')
-    XML.SubElement(msbuilder, 'msBuildFile').text = data['solution-file']
-    XML.SubElement(msbuilder, 'cmdLineArgs').text = (
-        data.get('extra-parameters', ''))
-    XML.SubElement(msbuilder, 'buildVariablesAsProperties').text = str(
-        data.get('pass-build-variables', True)).lower()
-    XML.SubElement(msbuilder, 'continueOnBuildFailure').text = str(
-        data.get('continue-on-build-failure', False)).lower()
+    msbuilder.set('plugin', 'msbuild')
+
+    mapping = [
+        ('msbuild-version', 'msBuildName', '(Default)'),
+        ('solution-file', 'msBuildFile', None),
+        ('extra-parameters', 'cmdLineArgs', ''),
+        ('pass-build-variables', 'buildVariablesAsProperties', True),
+        ('continue-on-build-failure', 'continueOnBuildFailure', False),
+        ('unstable-if-warnings', 'unstableIfWarnings', False)
+    ]
+    convert_mapping_to_xml(msbuilder, data, mapping, fail_required=True)
 
 
-def create_builders(parser, step):
+def create_builders(registry, step):
     dummy_parent = XML.Element("dummy")
-    parser.registry.dispatch('builder', parser, dummy_parent, step)
+    registry.dispatch('builder', dummy_parent, step)
     return list(dummy_parent)
 
 
-def conditional_step(parser, xml_parent, data):
+def conditional_step(registry, xml_parent, data):
     """yaml: conditional-step
     Conditionally execute some build steps. Requires the Jenkins
     :jenkins-wiki:`Conditional BuildStep Plugin
@@ -1570,7 +1658,7 @@ def conditional_step(parser, xml_parent, data):
                 build_condition(condition, conditions_container_tag)
 
     def build_step(parent, step):
-        for edited_node in create_builders(parser, step):
+        for edited_node in create_builders(registry, step):
             if not has_multiple_steps:
                 edited_node.set('class', edited_node.tag)
                 edited_node.tag = 'buildStep'
@@ -1610,7 +1698,7 @@ def conditional_step(parser, xml_parent, data):
         build_step(steps_parent, step)
 
 
-def maven_builder(parser, xml_parent, data):
+def maven_builder(registry, xml_parent, data):
     """yaml: maven-builder
     Execute Maven3 builder
 
@@ -1619,10 +1707,10 @@ def maven_builder(parser, xml_parent, data):
     Requires the Jenkins :jenkins-wiki:`Artifactory Plugin
     <Artifactory+Plugin>`.
 
-    :arg str name: Name of maven installation from the configuration
+    :arg str name: Name of maven installation from the configuration (required)
     :arg str pom: Location of pom.xml (default 'pom.xml')
-    :arg str goals: Goals to execute
-    :arg str maven-opts: Additional options for maven (optional)
+    :arg str goals: Goals to execute (required)
+    :arg str maven-opts: Additional options for maven (default '')
 
     Example:
 
@@ -1631,18 +1719,16 @@ def maven_builder(parser, xml_parent, data):
     """
     maven = XML.SubElement(xml_parent, 'org.jfrog.hudson.maven3.Maven3Builder')
 
-    try:
-        XML.SubElement(maven, 'mavenName').text = data['name']
-        XML.SubElement(maven, 'goals').text = data['goals']
-    except KeyError as e:
-        # exception will contain the missing key name
-        raise MissingAttributeError(e.arg[0])
-
-    XML.SubElement(maven, 'rootPom').text = data.get('pom', 'pom.xml')
-    XML.SubElement(maven, 'mavenOpts').text = data.get('maven-opts', '')
+    mapping = [
+        ('name', 'mavenName', None),
+        ('goals', 'goals', None),
+        ('pom', 'rootPom', 'pom.xml'),
+        ('maven-opts', 'mavenOpts', ''),
+    ]
+    convert_mapping_to_xml(maven, data, mapping, fail_required=True)
 
 
-def maven_target(parser, xml_parent, data):
+def maven_target(registry, xml_parent, data):
     """yaml: maven-target
     Execute top-level Maven targets.
 
@@ -1662,9 +1748,12 @@ def maven_target(parser, xml_parent, data):
     :arg str settings: Path to use as user settings.xml
         It is possible to provide a ConfigFileProvider settings file, such as
         see CFP Example below. (optional)
+    :arg str settings-type: Type of settings file file|cfp. (default file)
     :arg str global-settings: Path to use as global settings.xml
         It is possible to provide a ConfigFileProvider settings file, such as
         see CFP Example below. (optional)
+    :arg str global-settings-type: Type of settings file file|cfp. (default
+        file)
 
     Example:
 
@@ -1692,7 +1781,7 @@ def maven_target(parser, xml_parent, data):
     config_file_provider_settings(maven, data)
 
 
-def multijob(parser, xml_parent, data):
+def multijob(registry, xml_parent, data):
     """yaml: multijob
     Define a multijob phase. Requires the Jenkins
     :jenkins-wiki:`Multijob Plugin <Multijob+Plugin>`.
@@ -1872,7 +1961,7 @@ def multijob(parser, xml_parent, data):
             ).text = kill_status
 
 
-def config_file_provider(parser, xml_parent, data):
+def config_file_provider(registry, xml_parent, data):
     """yaml: config-file-provider
     Provide configuration files (i.e., settings.xml for maven etc.)
     which will be copied to the job's workspace.
@@ -1903,7 +1992,7 @@ def config_file_provider(parser, xml_parent, data):
     config_file_provider_builder(cfp, data)
 
 
-def grails(parser, xml_parent, data):
+def grails(registry, xml_parent, data):
     """yaml: grails
     Execute a grails build step. Requires the :jenkins-wiki:`Jenkins Grails
     Plugin <Grails+Plugin>`.
@@ -1969,7 +2058,7 @@ def grails(parser, xml_parent, data):
         data.get('refresh-dependencies', False)).lower()
 
 
-def sbt(parser, xml_parent, data):
+def sbt(registry, xml_parent, data):
     """yaml: sbt
     Execute a sbt build step. Requires the Jenkins :jenkins-wiki:`Sbt Plugin
     <sbt+plugin>`.
@@ -2003,7 +2092,7 @@ def sbt(parser, xml_parent, data):
         'subdir-path', '')
 
 
-def critical_block_start(parser, xml_parent, data):
+def critical_block_start(registry, xml_parent, data):
     """yaml: critical-block-start
     Designate the start of a critical block. Must be used in conjuction with
     critical-block-end.
@@ -2024,7 +2113,7 @@ def critical_block_start(parser, xml_parent, data):
     cbs.set('plugin', 'Exclusion')
 
 
-def critical_block_end(parser, xml_parent, data):
+def critical_block_end(registry, xml_parent, data):
     """yaml: critical-block-end
     Designate the end of a critical block. Must be used in conjuction with
     critical-block-start.
@@ -2045,20 +2134,48 @@ def critical_block_end(parser, xml_parent, data):
     cbs.set('plugin', 'Exclusion')
 
 
+def publish_over_ssh(registry, xml_parent, data):
+    """yaml: publish-over-ssh
+    Send files or execute commands over SSH.
+    Requires the Jenkins :jenkins-wiki:`Publish over SSH Plugin
+    <Publish+Over+SSH+Plugin>`.
+
+    :arg str site: name of the ssh site
+    :arg str target: destination directory
+    :arg bool target-is-date-format: whether target is a date format. If true,
+        raw text should be quoted (default false)
+    :arg bool clean-remote: should the remote directory be deleted before
+        transferring files (default false)
+    :arg str source: source path specifier
+    :arg str command: a command to execute on the remote server (optional)
+    :arg int timeout: timeout in milliseconds for the Exec command (optional)
+    :arg bool use-pty: run the exec command in pseudo TTY (default false)
+    :arg str excludes: excluded file pattern (optional)
+    :arg str remove-prefix: prefix to remove from uploaded file paths
+        (optional)
+    :arg bool fail-on-error: fail the build if an error occurs (default false)
+
+    Example:
+
+    .. literalinclude:: /../../tests/builders/fixtures/publish-over-ssh.yaml
+       :language: yaml
+    """
+    ssh(registry, xml_parent, data)
+
+
 class Builders(jenkins_jobs.modules.base.Base):
     sequence = 60
 
     component_type = 'builder'
     component_list_type = 'builders'
 
-    def gen_xml(self, parser, xml_parent, data):
+    def gen_xml(self, xml_parent, data):
 
         for alias in ['prebuilders', 'builders', 'postbuilders']:
             if alias in data:
                 builders = XML.SubElement(xml_parent, alias)
                 for builder in data[alias]:
-                    self.registry.dispatch('builder', parser, builders,
-                                           builder)
+                    self.registry.dispatch('builder', builders, builder)
 
         # Make sure freestyle projects always have a <builders> entry
         # or Jenkins v1.472 (at least) will NPE.
@@ -2067,7 +2184,7 @@ class Builders(jenkins_jobs.modules.base.Base):
             XML.SubElement(xml_parent, 'builders')
 
 
-def shining_panda(parser, xml_parent, data):
+def shining_panda(registry, xml_parent, data):
     """yaml: shining-panda
     Execute a command inside various python environments. Requires the Jenkins
     :jenkins-wiki:`ShiningPanda plugin <ShiningPanda+Plugin>`.
@@ -2184,7 +2301,7 @@ def shining_panda(parser, xml_parent, data):
     XML.SubElement(t, 'ignoreExitCode').text = str(ignore_exit_code).lower()
 
 
-def tox(parser, xml_parent, data):
+def tox(registry, xml_parent, data):
     """yaml: tox
     Use tox to build a multi-configuration project. Requires the Jenkins
     :jenkins-wiki:`ShiningPanda plugin <ShiningPanda+Plugin>`.
@@ -2210,7 +2327,7 @@ def tox(parser, xml_parent, data):
         XML.SubElement(t, 'toxenvPattern').text = pattern
 
 
-def managed_script(parser, xml_parent, data):
+def managed_script(registry, xml_parent, data):
     """yaml: managed-script
     This step allows to reference and execute a centrally managed
     script within your build. Requires the Jenkins
@@ -2254,7 +2371,7 @@ def managed_script(parser, xml_parent, data):
         XML.SubElement(args, 'string').text = arg
 
 
-def cmake(parser, xml_parent, data):
+def cmake(registry, xml_parent, data):
     """yaml: cmake
     Execute a CMake target. Requires the Jenkins :jenkins-wiki:`CMake Plugin
     <CMake+Plugin>`.
@@ -2379,7 +2496,7 @@ def cmake(parser, xml_parent, data):
     XML.SubElement(cmake, 'cleanBuild').text = str(
         data.get('clean-build-dir', False)).lower()
 
-    plugin_info = parser.registry.get_plugin_info("CMake plugin")
+    plugin_info = registry.get_plugin_info("CMake plugin")
     version = pkg_resources.parse_version(plugin_info.get("version", "1.0"))
 
     # Version 2.x breaks compatibility. So parse the input data differently
@@ -2462,7 +2579,7 @@ def cmake(parser, xml_parent, data):
         XML.SubElement(cmake, 'builderImpl')
 
 
-def dsl(parser, xml_parent, data):
+def dsl(registry, xml_parent, data):
     """yaml: dsl
     Process Job DSL
 
@@ -2501,13 +2618,14 @@ def dsl(parser, xml_parent, data):
 
     if 'target' in data:
         if 'targets' not in data:
-            logger.warn("Converting from old format of 'target' to new "
-                        "name 'targets', please update your job definitions.")
+            logger.warning("Converting from old format of 'target' to new "
+                           "name 'targets', please update your job "
+                           "definitions.")
             data['targets'] = data['target']
         else:
-            logger.warn("Ignoring old argument 'target' in favour of new "
-                        "format argument 'targets', please remove old "
-                        "format.")
+            logger.warning("Ignoring old argument 'target' in favour of new "
+                           "format argument 'targets', please remove old "
+                           "format.")
 
     if data.get('script-text'):
         XML.SubElement(dsl, 'scriptText').text = data.get('script-text')
@@ -2552,7 +2670,7 @@ def dsl(parser, xml_parent, data):
         'additional-classpath')
 
 
-def github_notifier(parser, xml_parent, data):
+def github_notifier(registry, xml_parent, data):
     """yaml: github-notifier
     Set pending build status on Github commit.
     Requires the Jenkins :jenkins-wiki:`Github Plugin <GitHub+Plugin>`.
@@ -2566,7 +2684,7 @@ def github_notifier(parser, xml_parent, data):
                    'com.cloudbees.jenkins.GitHubSetCommitStatusBuilder')
 
 
-def scan_build(parser, xml_parent, data):
+def scan_build(registry, xml_parent, data):
     """yaml: scan-build
     This plugin allows you configure a build step that will execute the Clang
     scan-build static analysis tool against an XCode project.
@@ -2629,7 +2747,7 @@ def scan_build(parser, xml_parent, data):
     convert_mapping_to_xml(p, data, mappings, fail_required=True)
 
 
-def ssh_builder(parser, xml_parent, data):
+def ssh_builder(registry, xml_parent, data):
     """yaml: ssh-builder
     Executes command on remote host
     Requires the Jenkins :jenkins-wiki:`SSH plugin <SSH+plugin>`.
@@ -2652,7 +2770,7 @@ def ssh_builder(parser, xml_parent, data):
         raise MissingAttributeError("'%s'" % e.args[0])
 
 
-def sonar(parser, xml_parent, data):
+def sonar(registry, xml_parent, data):
     """yaml: sonar
     Invoke standalone Sonar analysis.
     Requires the Jenkins `Sonar Plugin.
@@ -2691,7 +2809,137 @@ def sonar(parser, xml_parent, data):
         XML.SubElement(sonar, 'jdk').text = data['jdk']
 
 
-def sonatype_clm(parser, xml_parent, data):
+def xcode(registry, xml_parent, data):
+    """yaml: xcode
+    This step allows to execute an xcode build step. Requires the Jenkins
+    :jenkins-wiki:`Xcode Plugin <Xcode+Plugin>`.
+
+    :arg str developer-profile: the jenkins credential id for a
+        ios developer profile. (optional)
+    :arg bool clean-build: if true will delete the build directories
+        before invoking the build. (default false)
+    :arg bool clean-test-reports: UNKNOWN. (default false)
+    :arg bool archive: if true will generate an xcarchive of the specified
+        scheme. A workspace and scheme are are also needed for archives.
+        (default false)
+    :arg str configuration: This is the name of the configuration
+        as defined in the Xcode project. (default 'Release')
+    :arg str configuration-directory: The value to use for
+        CONFIGURATION_BUILD_DIR setting. (default '')
+    :arg str target: Leave empty for all targets. (default '')
+    :arg str sdk: Leave empty for default SDK. (default '')
+    :arg str symroot: Leave empty for default SYMROOT. (default '')
+    :arg str project-path: Relative path within the workspace
+        that contains the xcode project file(s). (default '')
+    :arg str project-file: Only needed if there is more than one
+        project file in the Xcode Project Directory. (default '')
+    :arg str build-arguments: Extra commandline arguments provided
+        to the xcode builder. (default '')
+    :arg str schema: Only needed if you want to compile for a
+        specific schema instead of a target. (default '')
+    :arg str workspace: Only needed if you want to compile a
+        workspace instead of a project. (default '')
+    :arg str profile: The relative path to the mobileprovision to embed,
+        leave blank for no embedded profile. (default '')
+    :arg str codesign-id: Override the code signing identity specified
+        in the project. (default '')
+    :arg bool allow-failing: if true will prevent this build step from
+        failing if xcodebuild exits with a non-zero return code. (default
+        false)
+    :arg str version-technical: The value to use for CFBundleVersion.
+        Leave blank to use project's technical number. (default '')
+    :arg str version-marketing: The value to use for
+        CFBundleShortVersionString. Leave blank to use project's
+        marketing number. (default '')
+    :arg str ipa-version: A pattern for the ipa file name. You may use
+        ${VERSION} and ${BUILD_DATE} (yyyy.MM.dd) in this string.
+        (default '')
+    :arg str ipa-output: The output directory for the .ipa file,
+        relative to the build directory. (default '')
+    :arg str keychain-name: The globally configured keychain to unlock for
+        this build. (default '')
+    :arg str keychain-path: The path of the keychain to use to sign the IPA.
+        (default '')
+    :arg str keychain-password: The password to use to unlock the keychain.
+        (default '')
+    :arg str keychain-unlock: Unlocks the keychain during use.
+        (default false)
+
+    Example:
+
+    .. literalinclude:: /../../tests/builders/fixtures/xcode.yaml
+       :language: yaml
+    """
+
+    if data.get('developer-profile'):
+        profile = XML.SubElement(xml_parent, 'au.com.rayh.'
+                                 'DeveloperProfileLoader')
+        XML.SubElement(profile, 'id').text = str(
+            data['developer-profile'])
+
+    xcode = XML.SubElement(xml_parent, 'au.com.rayh.XCodeBuilder')
+
+    XML.SubElement(xcode, 'cleanBeforeBuild').text = str(
+        data.get('clean-build', False)).lower()
+    XML.SubElement(xcode, 'cleanTestReports').text = str(
+        data.get('clean-test-reports', False)).lower()
+    XML.SubElement(xcode, 'generateArchive').text = str(
+        data.get('archive', False)).lower()
+
+    XML.SubElement(xcode, 'configuration').text = str(
+        data.get('configuration', 'Release'))
+    XML.SubElement(xcode, 'configurationBuildDir').text = str(
+        data.get('configuration-directory', ''))
+    XML.SubElement(xcode, 'target').text = str(data.get('target', ''))
+    XML.SubElement(xcode, 'sdk').text = str(data.get('sdk', ''))
+    XML.SubElement(xcode, 'symRoot').text = str(data.get('symroot', ''))
+
+    XML.SubElement(xcode, 'xcodeProjectPath').text = str(
+        data.get('project-path', ''))
+    XML.SubElement(xcode, 'xcodeProjectFile').text = str(
+        data.get('project-file', ''))
+    XML.SubElement(xcode, 'xcodebuildArguments').text = str(
+        data.get('build-arguments', ''))
+    XML.SubElement(xcode, 'xcodeSchema').text = str(data.get('schema', ''))
+    XML.SubElement(xcode, 'xcodeWorkspaceFile').text = str(
+        data.get('workspace', ''))
+    XML.SubElement(xcode, 'embeddedProfileFile').text = str(
+        data.get('profile', ''))
+
+    XML.SubElement(xcode, 'codeSigningIdentity').text = str(
+        data.get('codesign-id', ''))
+    XML.SubElement(xcode, 'allowFailingBuildResults').text = str(
+        data.get('allow-failing', False)).lower()
+
+    version = XML.SubElement(xcode, 'provideApplicationVersion')
+    version_technical = XML.SubElement(xcode,
+                                       'cfBundleVersionValue')
+    version_marketing = XML.SubElement(xcode,
+                                       'cfBundleShortVersionStringValue')
+    if data.get('version-technical') or data.get('version-marketing'):
+        version.text = 'true'
+        version_technical.text = data.get('version-technical', '')
+        version_marketing.text = data.get('version-marketing', '')
+    else:
+        version.text = 'false'
+
+    XML.SubElement(xcode, 'buildIpa').text = str(
+        bool(data.get('ipa-version')) or False).lower()
+    XML.SubElement(xcode, 'ipaName').text = data.get('ipa-version', '')
+    XML.SubElement(xcode, 'ipaOutputDirectory').text = str(
+        data.get('ipa-output', ''))
+
+    XML.SubElement(xcode, 'keychainName').text = str(
+        data.get('keychain-name', ''))
+    XML.SubElement(xcode, 'keychainPath').text = str(
+        data.get('keychain-path', ''))
+    XML.SubElement(xcode, 'keychainPwd').text = str(
+        data.get('keychain-password', ''))
+    XML.SubElement(xcode, 'unlockKeychain').text = str(
+        data.get('keychain-unlock', False)).lower()
+
+
+def sonatype_clm(registry, xml_parent, data):
     """yaml: sonatype-clm
     Requires the Jenkins :jenkins-wiki:`Sonatype CLM Plugin
     <Sonatype+CLM+%28formerly+Insight+for+CI%29>`.
@@ -2759,7 +3007,7 @@ def sonatype_clm(parser, xml_parent, data):
     convert_mapping_to_xml(clm, data, mappings, fail_required=True)
 
 
-def beaker(parser, xml_parent, data):
+def beaker(registry, xml_parent, data):
     """yaml: beaker
     Execute a beaker build step. Requires the Jenkins :jenkins-wiki:`Beaker
     Builder Plugin <Beaker+Builder+Plugin>`.
@@ -2798,7 +3046,7 @@ def beaker(parser, xml_parent, data):
         'download-logs', False)).lower()
 
 
-def cloudformation(parser, xml_parent, data):
+def cloudformation(registry, xml_parent, data):
     """yaml: cloudformation
     Create cloudformation stacks before running a build and optionally
     delete them at the end.  Requires the Jenkins :jenkins-wiki:`AWS
@@ -2841,7 +3089,7 @@ def cloudformation(parser, xml_parent, data):
                              region_dict)
 
 
-def openshift_build_verify(parser, xml_parent, data):
+def openshift_build_verify(registry, xml_parent, data):
     """yaml: openshift-build-verify
     Performs the equivalent of an 'oc get builds` command invocation for the
     provided buildConfig key provided; once the list of builds are obtained,
@@ -2890,7 +3138,7 @@ def openshift_build_verify(parser, xml_parent, data):
     convert_mapping_to_xml(osb, data, mapping, fail_required=True)
 
 
-def openshift_builder(parser, xml_parent, data):
+def openshift_builder(registry, xml_parent, data):
     """yaml: openshift-builder
     Perform builds in OpenShift for the job.
     Requires the Jenkins :jenkins-wiki:`OpenShift
@@ -2946,7 +3194,7 @@ def openshift_builder(parser, xml_parent, data):
     convert_mapping_to_xml(osb, data, mapping, fail_required=True)
 
 
-def openshift_creator(parser, xml_parent, data):
+def openshift_creator(registry, xml_parent, data):
     """yaml: openshift-creator
     Performs the equivalent of an oc create command invocation;
     this build step takes in the provided JSON or YAML text, and if it
@@ -2994,7 +3242,7 @@ def openshift_creator(parser, xml_parent, data):
     convert_mapping_to_xml(osb, data, mapping, fail_required=True)
 
 
-def openshift_dep_verify(parser, xml_parent, data):
+def openshift_dep_verify(registry, xml_parent, data):
     """yaml: openshift-dep-verify
     Determines whether the expected set of DeploymentConfig's,
     ReplicationController's, and active replicas are present based on prior
@@ -3045,7 +3293,7 @@ def openshift_dep_verify(parser, xml_parent, data):
     convert_mapping_to_xml(osb, data, mapping, fail_required=True)
 
 
-def openshift_deployer(parser, xml_parent, data):
+def openshift_deployer(registry, xml_parent, data):
     """yaml: openshift-deployer
     Start a deployment in OpenShift for the job.
     Requires the Jenkins :jenkins-wiki:`OpenShift
@@ -3091,7 +3339,7 @@ def openshift_deployer(parser, xml_parent, data):
     convert_mapping_to_xml(osb, data, mapping, fail_required=True)
 
 
-def openshift_img_tagger(parser, xml_parent, data):
+def openshift_img_tagger(registry, xml_parent, data):
     """yaml: openshift-img-tagger
     Performs the equivalent of an oc tag command invocation in order to
     manipulate tags for images in OpenShift ImageStream's
@@ -3142,7 +3390,7 @@ def openshift_img_tagger(parser, xml_parent, data):
     convert_mapping_to_xml(osb, data, mapping, fail_required=True)
 
 
-def openshift_scaler(parser, xml_parent, data):
+def openshift_scaler(registry, xml_parent, data):
     """yaml: openshift-scaler
     Scale deployments in OpenShift for the job.
     Requires the Jenkins :jenkins-wiki:`OpenShift
@@ -3189,7 +3437,7 @@ def openshift_scaler(parser, xml_parent, data):
     convert_mapping_to_xml(osb, data, mapping, fail_required=True)
 
 
-def openshift_svc_verify(parser, xml_parent, data):
+def openshift_svc_verify(registry, xml_parent, data):
     """yaml: openshift-svc-verify
     Verify a service is up in OpenShift for the job.
     Requires the Jenkins :jenkins-wiki:`OpenShift
@@ -3234,7 +3482,7 @@ def openshift_svc_verify(parser, xml_parent, data):
     convert_mapping_to_xml(osb, data, mapping, fail_required=True)
 
 
-def runscope(parser, xml_parent, data):
+def runscope(registry, xml_parent, data):
     """yaml: runscope
     Execute a Runscope test.
     Requires the Jenkins :jenkins-wiki:`Runscope Plugin <Runscope+Plugin>`.
@@ -3243,23 +3491,29 @@ def runscope(parser, xml_parent, data):
     :arg str access-token: OAuth Personal Access token. (required)
     :arg int timeout: Timeout for test duration in seconds. (default 60)
 
-    Example:
+    Minimal Example:
 
-    .. literalinclude:: /../../tests/builders/fixtures/runscope.yaml
+    .. literalinclude:: /../../tests/builders/fixtures/runscope-minimal.yaml
+       :language: yaml
+
+    Full Example:
+
+    .. literalinclude:: /../../tests/builders/fixtures/runscope-full.yaml
        :language: yaml
     """
     runscope = XML.SubElement(xml_parent,
                               'com.runscope.jenkins.Runscope.RunscopeBuilder')
-    try:
-        XML.SubElement(runscope, 'triggerEndPoint').text = data[
-            "test-trigger-url"]
-        XML.SubElement(runscope, 'accessToken').text = data["access-token"]
-    except KeyError as e:
-        raise MissingAttributeError(e.args[0])
-    XML.SubElement(runscope, 'timeout').text = str(data.get('timeout', '60'))
+    runscope.set('plugin', 'runscope')
+
+    mapping = [
+        ('test-trigger-url', 'triggerEndPoint', None),
+        ('access-token', 'accessToken', None),
+        ('timeout', 'timeout', 60),
+    ]
+    convert_mapping_to_xml(runscope, data, mapping, fail_required=True)
 
 
-def description_setter(parser, xml_parent, data):
+def description_setter(registry, xml_parent, data):
     """yaml: description-setter
     This plugin sets the description for each build,
     based upon a RegEx test of the build log file.
@@ -3311,29 +3565,21 @@ def docker_build_publish(parse, xml_parent, data):
                         'com.cloudbees.dockerpublish.DockerBuilder')
     db.set('plugin', 'docker-build-publish')
 
-    try:
-        XML.SubElement(db, 'repoName').text = str(data['repo-name'])
-    except KeyError:
-        raise MissingAttributeError('repo-name')
-
-    XML.SubElement(db, 'repoTag').text = str(data.get('repo-tag', ''))
-    XML.SubElement(db, 'noCache').text = str(
-        data.get('no-cache', False)).lower()
-    XML.SubElement(db, 'noForcePull').text = str(
-        data.get('no-force-pull', False)).lower()
-    XML.SubElement(db, 'skipBuild').text = str(
-        data.get('skip-build', False)).lower()
-    XML.SubElement(db, 'skipDecorate').text = str(
-        data.get('skip-decorate', False)).lower()
-    XML.SubElement(db, 'skipTagLatest').text = str(
-        data.get('skip-tag-latest', False)).lower()
-    XML.SubElement(db, 'skipPush').text = str(
-        data.get('skip-push', False)).lower()
-    XML.SubElement(db, 'dockerfilePath').text = str(
-        data.get('file-path', ''))
+    mapping = [
+        ('repo-name', 'repoName', None),
+        ('repo-tag', 'repoTag', ''),
+        ('no-cache', 'noCache', False),
+        ('no-force-pull', 'noForcePull', False),
+        ('skip-build', 'skipBuild', False),
+        ('skip-decorate', 'skipDecorate', False),
+        ('skip-tag-latest', 'skipTagLatest', False),
+        ('skip-push', 'skipPush', False),
+        ('file-path', 'dockerfilePath', ''),
+    ]
+    convert_mapping_to_xml(db, data, mapping, fail_required=True)
 
 
-def build_name_setter(parser, xml_parent, data):
+def build_name_setter(registry, xml_parent, data):
     """yaml: build-name-setter
     Define Build Name Setter options which allows your build name to be
     updated during the build process.
@@ -3363,13 +3609,12 @@ def build_name_setter(parser, xml_parent, data):
     build_name_setter = XML.SubElement(
         xml_parent,
         'org.jenkinsci.plugins.buildnameupdater.BuildNameUpdater')
-    XML.SubElement(build_name_setter, 'buildName').text = data.get(
-        'name', 'version.txt')
-    XML.SubElement(build_name_setter, 'macroTemplate').text = data.get(
-        'template', '#${BUILD_NUMBER}')
-    XML.SubElement(build_name_setter, 'fromFile').text = str(
-        data.get('file', False)).lower()
-    XML.SubElement(build_name_setter, 'fromMacro').text = str(
-        data.get('macro', False)).lower()
-    XML.SubElement(build_name_setter, 'macroFirst').text = str(
-        data.get('macro-first', False)).lower()
+    mapping = [
+        ('name', 'buildName', 'version.txt'),
+        ('template', 'macroTemplate', '#${BUILD_NUMBER}'),
+        ('file', 'fromFile', False),
+        ('macro', 'fromMacro', False),
+        ('macro-first', 'macroFirst', False),
+    ]
+    convert_mapping_to_xml(
+        build_name_setter, data, mapping, fail_required=True)

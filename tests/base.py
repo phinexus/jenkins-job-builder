@@ -40,7 +40,9 @@ from jenkins_jobs.modules import project_matrix
 from jenkins_jobs.modules import project_maven
 from jenkins_jobs.modules import project_multijob
 from jenkins_jobs.parser import YamlParser
+from jenkins_jobs.registry import ModuleRegistry
 from jenkins_jobs.xml_config import XmlJob
+from jenkins_jobs.xml_config import XmlJobGenerator
 
 # This dance deals with the fact that we want unittest.mock if
 # we're on Python 3.4 and later, and non-stdlib mock otherwise.
@@ -152,22 +154,24 @@ class BaseTestCase(LoggingFixture):
             self.addDetail("plugins-info",
                            text_content(str(plugins_info)))
 
-        parser = YamlParser(jjb_config, plugins_info)
+        parser = YamlParser(jjb_config)
+        registry = ModuleRegistry(jjb_config, plugins_info)
+        registry.set_parser_data(parser.data)
 
-        pub = self.klass(parser.registry)
+        pub = self.klass(registry)
 
         project = None
         if ('project-type' in yaml_content):
             if (yaml_content['project-type'] == "maven"):
-                project = project_maven.Maven(parser.registry)
+                project = project_maven.Maven(registry)
             elif (yaml_content['project-type'] == "matrix"):
-                project = project_matrix.Matrix(parser.registry)
+                project = project_matrix.Matrix(registry)
             elif (yaml_content['project-type'] == "flow"):
-                project = project_flow.Flow(parser.registry)
+                project = project_flow.Flow(registry)
             elif (yaml_content['project-type'] == "multijob"):
-                project = project_multijob.MultiJob(parser.registry)
+                project = project_multijob.MultiJob(registry)
             elif (yaml_content['project-type'] == "externaljob"):
-                project = project_externaljob.ExternalJob(parser.registry)
+                project = project_externaljob.ExternalJob(registry)
 
         if project:
             xml_project = project.root_xml(yaml_content)
@@ -175,7 +179,7 @@ class BaseTestCase(LoggingFixture):
             xml_project = XML.Element('project')
 
         # Generate the XML tree directly with modules/general
-        pub.gen_xml(parser, xml_project, yaml_content)
+        pub.gen_xml(xml_project, yaml_content)
 
         # Prettify generated XML
         pretty_xml = XmlJob(xml_project, 'fixturejob').output().decode('utf-8')
@@ -197,15 +201,19 @@ class SingleJobTestCase(BaseTestCase):
         parser = YamlParser(config)
         parser.parse(self.in_filename)
 
-        # Generate the XML tree
-        parser.expandYaml()
-        parser.generateXML()
+        registry = ModuleRegistry(config)
+        registry.set_parser_data(parser.data)
+        job_data_list = parser.expandYaml(registry)
 
-        parser.xml_jobs.sort(key=operator.attrgetter('name'))
+        # Generate the XML tree
+        xml_generator = XmlJobGenerator(registry)
+        xml_jobs = xml_generator.generateXML(job_data_list)
+
+        xml_jobs.sort(key=operator.attrgetter('name'))
 
         # Prettify generated XML
         pretty_xml = u"\n".join(job.output().decode('utf-8')
-                                for job in parser.xml_jobs)
+                                for job in xml_jobs)
 
         self.assertThat(
             pretty_xml,

@@ -31,10 +31,12 @@ import yaml
 import jenkins
 
 from jenkins_jobs.constants import MAGIC_MANAGE_STRING
-from jenkins_jobs.parallel import parallelize
-from jenkins_jobs.parser import YamlParser
+from jenkins_jobs.parallel import concurrent
 from jenkins_jobs import utils
 
+__all__ = [
+    "Jenkins"
+]
 
 logger = logging.getLogger(__name__)
 
@@ -154,7 +156,6 @@ class Jenkins(object):
             self._job_list = set(job['name'] for job in self.jobs)
         return self._job_list
 
-    @parallelize
     def update_job(self, job_name, xml):
         if self.is_job(job_name):
             logger.info("Reconfiguring jenkins job {0}".format(job_name))
@@ -195,9 +196,10 @@ class Jenkins(object):
             plugins_list = self.jenkins.get_plugins_info()
         except jenkins.JenkinsException as e:
             if re.search("Connection refused", str(e)):
-                logger.warn("Unable to retrieve Jenkins Plugin Info from {0},"
-                            " using default empty plugins info list.".format(
-                                self.jenkins.server))
+                logger.warning(
+                    "Unable to retrieve Jenkins Plugin Info from {0},"
+                    " using default empty plugins info list.".format(
+                        self.jenkins.server))
                 plugins_list = [{'shortName': '',
                                  'version': '',
                                  'longName': ''}]
@@ -245,14 +247,12 @@ class Builder(object):
     def delete_old_managed(self, keep=None):
         jobs = self.jenkins.get_jobs()
         deleted_jobs = 0
-        if keep is None:
-            keep = [job.name for job in self.parser.xml_jobs]
         for job in jobs:
             if job['name'] not in keep:
                 if self.jenkins.is_managed(job['name']):
                     logger.info("Removing obsolete jenkins job {0}"
                                 .format(job['name']))
-                    self.delete_job(job['name'])
+                    self.delete_job([job['name']])
                     deleted_jobs += 1
                 else:
                     logger.info("Not deleting unmanaged jenkins job %s",
@@ -261,16 +261,7 @@ class Builder(object):
                 logger.debug("Keeping job %s", job['name'])
         return deleted_jobs
 
-    def delete_job(self, jobs_glob, fn=None):
-        self.parser = YamlParser(self.jjb_config, self.plugins_list)
-
-        if fn:
-            self.parser.load_files(fn)
-            self.parser.expandYaml([jobs_glob])
-            jobs = [j['name'] for j in self.parser.jobs]
-        else:
-            jobs = [jobs_glob]
-
+    def delete_job(self, jobs):
         if jobs is not None:
             logger.info("Removing jenkins job(s): %s" % ", ".join(jobs))
         for job in jobs:
@@ -286,7 +277,6 @@ class Builder(object):
         # Need to clear the JJB cache after deletion
         self.cache.clear()
 
-    @parallelize
     def changed(self, job):
         md5 = job.md5()
 
@@ -296,24 +286,14 @@ class Builder(object):
             logger.debug("'{0}' has not changed".format(job.name))
         return changed
 
-    def update_jobs(self, input_fn, jobs_glob=None, output=None,
-                    n_workers=None):
+    def update_jobs(self, xml_jobs, output=None, n_workers=None):
         orig = time.time()
 
-        self.parser = YamlParser(self.jjb_config, self.plugins_list)
-        self.parser.load_files(input_fn)
+        logger.info("Number of jobs generated:  %d", len(xml_jobs))
+        xml_jobs.sort(key=operator.attrgetter('name'))
 
-        self.parser.expandYaml(jobs_glob)
-        self.parser.generateXML()
-        step = time.time()
-        logging.debug('%d XML files generated in %ss',
-                      len(self.parser.jobs), str(step - orig))
-
-        logger.info("Number of jobs generated:  %d", len(self.parser.xml_jobs))
-        self.parser.xml_jobs.sort(key=operator.attrgetter('name'))
-
-        if (output and not hasattr(output, 'write')
-                and not os.path.isdir(output)):
+        if (output and not hasattr(output, 'write') and
+                not os.path.isdir(output)):
             logger.info("Creating directory %s" % output)
             try:
                 os.makedirs(output)
@@ -326,7 +306,7 @@ class Builder(object):
             if hasattr(output, 'write'):
                 output = utils.wrap_stream(output)
 
-            for job in self.parser.xml_jobs:
+            for job in xml_jobs:
                 if hasattr(output, 'write'):
                     # `output` is a file-like object
                     logger.info("Job name:  %s", job.name)
@@ -346,13 +326,13 @@ class Builder(object):
                 logger.debug("Writing XML to '{0}'".format(output_fn))
                 with io.open(output_fn, 'w', encoding='utf-8') as f:
                     f.write(job.output().decode('utf-8'))
-            return self.parser.xml_jobs, len(self.parser.xml_jobs)
+            return xml_jobs, len(xml_jobs)
 
         # Filter out the jobs that did not change
         logging.debug('Filtering %d jobs for changed jobs',
-                      len(self.parser.xml_jobs))
+                      len(xml_jobs))
         step = time.time()
-        jobs = [job for job in self.parser.xml_jobs
+        jobs = [job for job in xml_jobs
                 if self.changed(job)]
         logging.debug("Filtered for changed jobs in %ss",
                       (time.time() - step))
@@ -366,9 +346,9 @@ class Builder(object):
         p_params = [{'job': job} for job in jobs]
         results = self.parallel_update_job(
             n_workers=n_workers,
-            parallelize=p_params)
+            concurrent=p_params)
         logging.debug("Parsing results")
-        # generalize the result parsing, as a parallelized job always returns a
+        # generalize the result parsing, as a concurrent job always returns a
         # list
         if len(p_params) in (1, 0):
             results = [results]
@@ -387,7 +367,7 @@ class Builder(object):
         logging.debug("Total run took %ss", (time.time() - orig))
         return jobs, len(jobs)
 
-    @parallelize
+    @concurrent
     def parallel_update_job(self, job):
         self.jenkins.update_job(job.name, job.output().decode('utf-8'))
         return (job.name, job.md5())
