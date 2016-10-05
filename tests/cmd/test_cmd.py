@@ -1,24 +1,23 @@
 import os
 
-import testtools
 from jenkins_jobs.cli import entry
-from tests.base import LoggingFixture
+from tests import base
 from tests.base import mock
 
 
-class CmdTestsBase(LoggingFixture, testtools.TestCase):
+class CmdTestsBase(base.BaseTestCase):
 
     fixtures_path = os.path.join(os.path.dirname(__file__), 'fixtures')
 
     def setUp(self):
         super(CmdTestsBase, self).setUp()
 
-        # Testing the cmd module can sometimes result in the CacheStorage class
+        # Testing the cmd module can sometimes result in the JobCache class
         # attempting to create the cache directory multiple times as the tests
-        # are run in parallel.  Stub out the CacheStorage to ensure that each
+        # are run in parallel.  Stub out the JobCache to ensure that each
         # test can safely create the cache directory without risk of
         # interference.
-        cache_patch = mock.patch('jenkins_jobs.builder.CacheStorage',
+        cache_patch = mock.patch('jenkins_jobs.builder.JobCache',
                                  autospec=True)
         self.cache_mock = cache_patch.start()
         self.addCleanup(cache_patch.stop)

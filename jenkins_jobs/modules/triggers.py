@@ -871,6 +871,8 @@ def github_pull_request(registry, xml_parent, data):
         (optional)
     :arg string error-comment: comment to add to the PR on an errored job
         (optional)
+    :arg bool cancel-builds-on-update: cancel existing builds when a PR is
+        updated (optional)
 
     Example:
 
@@ -956,9 +958,11 @@ def github_pull_request(registry, xml_parent, data):
         error_comment
     )
 
-    # We want to have only one 'extensions' subelement, even if both status
-    # handling and comment handling is needed.
-    if requires_status or requires_job_comment:
+    cancel_builds_on_update = data.get('cancel-builds-on-update', False)
+
+    # We want to have only one 'extensions' subelement, even if status
+    # handling, comment handling and other extensions are enabled.
+    if requires_status or requires_job_comment or cancel_builds_on_update:
         extensions = XML.SubElement(ghprb, 'extensions')
 
     # Both comment and status elements have this same type.  Using a const is
@@ -1027,6 +1031,11 @@ def github_pull_request(registry, xml_parent, data):
             XML.SubElement(error_comment_elem, 'message').text = str(
                 error_comment)
             XML.SubElement(error_comment_elem, 'result').text = 'ERROR'
+
+    if cancel_builds_on_update:
+        XML.SubElement(extensions,
+                       'org.jenkinsci.plugins.ghprb.extensions.'
+                       'build.GhprbCancelBuildsOnUpdate')
 
 
 def gitlab_merge_request(registry, xml_parent, data):
@@ -1689,6 +1698,36 @@ def rabbitmq(registry, xml_parent, data):
             data.get('token'))
     except KeyError as e:
         raise MissingAttributeError(e.arg[0])
+
+
+def parameterized_timer(parser, xml_parent, data):
+    """yaml: parameterized-timer
+    Trigger builds with parameters at certain times.
+    Requires the Jenkins :jenkins-wiki:`Parameterized Scheduler Plugin
+    <Parameterized+Scheduler+Plugin>`.
+
+    :arg str cron: cron syntax of when to run and with which parameters
+        (required)
+
+    Example:
+
+    .. literalinclude::
+        /../../tests/triggers/fixtures/parameterized-timer001.yaml
+       :language: yaml
+    """
+
+    param_timer = XML.SubElement(
+        xml_parent,
+        'org.jenkinsci.plugins.parameterizedscheduler.'
+        'ParameterizedTimerTrigger')
+
+    XML.SubElement(param_timer, 'spec').text = ''
+
+    try:
+        XML.SubElement(param_timer, 'parameterizedSpecification').text = str(
+            data.get('cron'))
+    except KeyError as e:
+        raise MissingAttributeError(e)
 
 
 class Triggers(jenkins_jobs.modules.base.Base):

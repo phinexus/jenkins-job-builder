@@ -18,7 +18,7 @@ import logging
 import sys
 
 from jenkins_jobs import utils
-from jenkins_jobs.builder import Builder
+from jenkins_jobs.builder import JenkinsManager
 import jenkins_jobs.cli.subcommand.base as base
 
 
@@ -30,13 +30,13 @@ class DeleteAllSubCommand(base.BaseSubCommand):
     def parse_args(self, subparser):
         delete_all = subparser.add_parser(
             'delete-all',
-            help='''delete *ALL* jobs from Jenkins server, including those not
-            managed by Jenkins Job Builder.''')
+            help="delete *ALL* jobs from Jenkins server, including "
+            "those not managed by Jenkins Job Builder.")
 
         self.parse_option_recursive_exclude(delete_all)
 
     def execute(self, options, jjb_config):
-        builder = Builder(jjb_config)
+        builder = JenkinsManager(jjb_config)
 
         if not utils.confirm(
                 'Sure you want to delete *ALL* jobs from Jenkins '

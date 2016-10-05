@@ -17,7 +17,7 @@ import logging
 import sys
 import time
 
-from jenkins_jobs.builder import Builder
+from jenkins_jobs.builder import JenkinsManager
 from jenkins_jobs.parser import YamlParser
 from jenkins_jobs.registry import ModuleRegistry
 from jenkins_jobs.xml_config import XmlJobGenerator
@@ -35,8 +35,8 @@ class UpdateSubCommand(base.BaseSubCommand):
             'path',
             nargs='?',
             default=sys.stdin,
-            help='''colon-separated list of paths to YAML files or
-            directories''')
+            help="colon-separated list of paths to YAML files "
+            "or directories")
 
     def parse_arg_names(self, parser):
         parser.add_argument(
@@ -62,11 +62,11 @@ class UpdateSubCommand(base.BaseSubCommand):
             type=int,
             default=1,
             dest='n_workers',
-            help='''number of workers to use, 0 for autodetection and 1 for
-            just one worker.''')
+            help="number of workers to use, 0 for autodetection and 1 "
+            "for just one worker.")
 
     def _generate_xmljobs(self, options, jjb_config=None):
-        builder = Builder(jjb_config)
+        builder = JenkinsManager(jjb_config)
 
         logger.info("Updating jobs in {0} ({1})".format(
             options.path, options.names))
@@ -100,8 +100,7 @@ class UpdateSubCommand(base.BaseSubCommand):
         builder, xml_jobs = self._generate_xmljobs(options, jjb_config)
 
         jobs, num_updated_jobs = builder.update_jobs(
-            xml_jobs,
-            n_workers=options.n_workers)
+            xml_jobs, n_workers=options.n_workers)
         logger.info("Number of jobs updated: %d", num_updated_jobs)
 
         keep_jobs = [job.name for job in xml_jobs]

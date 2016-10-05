@@ -16,27 +16,26 @@
 
 from jenkins_jobs.config import JJBConfig
 import jenkins_jobs.builder
-from tests.base import LoggingFixture
+from tests import base
 from tests.base import mock
 
-from testtools import TestCase
 
-
-@mock.patch('jenkins_jobs.builder.CacheStorage', mock.MagicMock)
-class TestCaseTestBuilder(LoggingFixture, TestCase):
+@mock.patch('jenkins_jobs.builder.JobCache', mock.MagicMock)
+class TestCaseTestBuilder(base.BaseTestCase):
     def setUp(self):
         super(TestCaseTestBuilder, self).setUp()
-        jjb_config = JJBConfig()
-        jjb_config.builder['plugins_info'] = ['plugin1', 'plugin2']
-        jjb_config.validate()
-        self.builder = jenkins_jobs.builder.Builder(jjb_config)
+        self.jjb_config = JJBConfig()
+        self.jjb_config.validate()
 
     def test_plugins_list(self):
+        self.jjb_config.builder['plugins_info'] = ['plugin1', 'plugin2']
+        self.builder = jenkins_jobs.builder.JenkinsManager(self.jjb_config)
         self.assertEqual(self.builder.plugins_list, ['plugin1', 'plugin2'])
 
     @mock.patch.object(jenkins_jobs.builder.jenkins.Jenkins,
                        'get_plugins_info', return_value=['p1', 'p2'])
     def test_plugins_list_from_jenkins(self, jenkins_mock):
         # Trigger fetching the plugins from jenkins when accessing the property
-        self.builder._plugins_list = None
+        self.jjb_config.builder['plugins_info'] = None
+        self.builder = jenkins_jobs.builder.JenkinsManager(self.jjb_config)
         self.assertEqual(self.builder.plugins_list, ['p1', 'p2'])
