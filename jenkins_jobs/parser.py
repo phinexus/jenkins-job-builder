@@ -251,7 +251,7 @@ class YamlParser(object):
             if key in newdata.keys():
                 newdata[key] = override_dict[key]
 
-        newdata.update(data)
+        newdata = self.updateAndMerge( newdata, data )
         return newdata
 
     def _formatDescription(self, job):
@@ -408,7 +408,7 @@ class YamlParser(object):
             job_name = expanded.get('name')
             if jobs_glob and not matches(job_name, jobs_glob):
                 continue
-
+            
             # resolve all values holding params when finished constructing xml
             params.update(expanded)
             expanded = deep_format(expanded,params)
