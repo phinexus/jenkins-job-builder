@@ -65,6 +65,15 @@ before being read in as string data. This allows job-templates to use this tag
 to include scripts from files without needing to escape braces in the original
 file.
 
+.. warning::
+
+    When used as a macro ``!include-raw-escape:`` should only be used if
+    parameters are passed into the escaped file and you would like to escape
+    those parameters. If the file does not have any jjb parameters passed into
+    it then ``!include-raw:`` should be used instead otherwise you will run
+    into an interesting issue where ``include-raw-escape:`` actually adds
+    additional curly braces around existing curly braces. For example
+    ${PROJECT} becomes ${{PROJECT}} which may break bash scripts.
 
 Examples:
 
@@ -90,16 +99,61 @@ Examples:
 For all the multi file includes, the files are simply appended using a newline
 character.
 
+
+To allow for job templates to perform substitution on the path names, when a
+filename containing a python format placeholder is encountered, lazy loading
+support is enabled, where instead of returning the contents back during yaml
+parsing, it is delayed until the variable substitution is performed.
+
+Example:
+
+    .. literalinclude:: /../../tests/yamlparser/fixtures/lazy-load-jobs001.yaml
+
+    using a list of files:
+
+    .. literalinclude::
+        /../../tests/yamlparser/fixtures/lazy-load-jobs-multi001.yaml
+
+.. note::
+
+    Because lazy-loading involves performing the substitution on the file
+    name, it means that jenkins-job-builder can not call the variable
+    substitution on the contents of the file. This means that the
+    ``!include-raw:`` tag will behave as though ``!include-raw-escape:`` tag
+    was used instead whenever name substitution on the filename is to be
+    performed.
+
+    Given the behaviour described above, when substitution is to be performed
+    on any filename passed via ``!include-raw-escape:`` the tag will be
+    automatically converted to ``!include-raw:`` and no escaping will be
+    performed.
+
+
+The tag ``!include-jinja2:`` will treat the given string or list of strings as
+filenames to be opened as Jinja2 templates, which should be rendered to a
+string and included in the calling YAML construct.  (This is analogous to the
+templating that will happen with ``!include-raw``.)
+
+Examples:
+
+    .. literalinclude:: /../../tests/yamlparser/fixtures/jinja01.yaml
+
+    contents of jinja01.yaml.inc:
+
+        .. literalinclude:: /../../tests/yamlparser/fixtures/jinja01.yaml.inc
 """
 
+import copy
 import functools
 import io
 import logging
 import os
 import re
 
+import jinja2
 import yaml
 from yaml.constructor import BaseConstructor
+from yaml.representer import BaseRepresenter
 from yaml import YAMLObject
 
 from collections import OrderedDict
@@ -143,6 +197,14 @@ class OrderedConstructor(BaseConstructor):
             value = self.construct_object(value_node, deep=False)
             mapping[key] = value
         data.update(mapping)
+
+
+class OrderedRepresenter(BaseRepresenter):
+
+    def represent_yaml_mapping(self, mapping, flow_style=None):
+        tag = u'tag:yaml.org,2002:map'
+        node = self.represent_mapping(tag, mapping, flow_style=flow_style)
+        return node
 
 
 class LocalAnchorLoader(yaml.Loader):
@@ -229,10 +291,50 @@ class LocalLoader(OrderedConstructor, LocalAnchorLoader):
     def _escape(self, data):
         return re.sub(r'({|})', r'\1\1', data)
 
+    def __deepcopy__(self, memo):
+        """
+        Make a deep copy of a LocalLoader excluding the uncopyable self.stream.
+
+        This is achieved by performing a shallow copy of self, setting the
+        stream attribute to None and then performing a deep copy of the shallow
+        copy.
+
+        (As this method will be called again on that deep copy, we also set a
+        sentinel attribute on the shallow copy to ensure that we don't recurse
+        infinitely.)
+        """
+        assert self.done, 'Unsafe to copy an in-progress loader'
+        if getattr(self, '_copy', False):
+            # This is a shallow copy for an in-progress deep copy, remove the
+            # _copy marker and return self
+            del self._copy
+            return self
+        # Make a shallow copy
+        shallow = copy.copy(self)
+        shallow.stream = None
+        shallow._copy = True
+        deep = copy.deepcopy(shallow, memo)
+        memo[id(self)] = deep
+        return deep
+
+
+class LocalDumper(OrderedRepresenter, yaml.Dumper):
+    def __init__(self, *args, **kwargs):
+        super(LocalDumper, self).__init__(*args, **kwargs)
+
+        # representer to ensure conversion back looks like normal
+        # mapping and hides that we use OrderedDict internally
+        self.add_representer(OrderedDict,
+                             type(self).represent_yaml_mapping)
+        # convert any tuples to lists as the JJB input is generally
+        # in list format
+        self.add_representer(tuple,
+                             type(self).represent_list)
+
 
 class BaseYAMLObject(YAMLObject):
     yaml_loader = LocalLoader
-    yaml_dumper = yaml.Dumper
+    yaml_dumper = LocalDumper
 
 
 class YamlInclude(BaseYAMLObject):
@@ -249,9 +351,14 @@ class YamlInclude(BaseYAMLObject):
         return filename
 
     @classmethod
-    def _open_file(cls, loader, scalar_node):
-        filename = cls._find_file(loader.construct_yaml_str(scalar_node),
-                                  loader.search_path)
+    def _open_file(cls, loader, node):
+        node_str = loader.construct_yaml_str(node)
+        try:
+            node_str.format()
+        except KeyError:
+            return cls._lazy_load(loader, cls.yaml_tag, node)
+
+        filename = cls._find_file(node_str, loader.search_path)
         try:
             with io.open(filename, 'r', encoding='utf-8') as f:
                 return f.read()
@@ -262,18 +369,32 @@ class YamlInclude(BaseYAMLObject):
 
     @classmethod
     def _from_file(cls, loader, node):
-        data = yaml.load(cls._open_file(loader, node),
+        contents = cls._open_file(loader, node)
+        if isinstance(contents, LazyLoader):
+            return contents
+
+        data = yaml.load(contents,
                          functools.partial(cls.yaml_loader,
                                            search_path=loader.search_path))
         return data
+
+    @classmethod
+    def _lazy_load(cls, loader, tag, node_str):
+        logger.info("Lazy loading of file template '{0}' enabled"
+                    .format(node_str))
+        return LazyLoader((cls, loader, node_str))
 
     @classmethod
     def from_yaml(cls, loader, node):
         if isinstance(node, yaml.ScalarNode):
             return cls._from_file(loader, node)
         elif isinstance(node, yaml.SequenceNode):
-            return u'\n'.join(cls._from_file(loader, scalar_node)
-                              for scalar_node in node.value)
+            contents = [cls._from_file(loader, scalar_node)
+                        for scalar_node in node.value]
+            if any(isinstance(s, CustomLoader) for s in contents):
+                return CustomLoaderCollection(contents)
+
+            return u'\n'.join(contents)
         else:
             raise yaml.constructor.ConstructorError(
                 None, None, "expected either a sequence or scalar node, but "
@@ -293,7 +414,26 @@ class YamlIncludeRawEscape(YamlIncludeRaw):
 
     @classmethod
     def from_yaml(cls, loader, node):
-        return loader.escape_callback(YamlIncludeRaw.from_yaml(loader, node))
+        data = YamlIncludeRaw.from_yaml(loader, node)
+        if isinstance(data, LazyLoader):
+            logger.warning("Replacing %s tag with %s since lazy loading means "
+                           "file contents will not be deep formatted for "
+                           "variable substitution.", cls.yaml_tag,
+                           YamlIncludeRaw.yaml_tag)
+            return data
+        else:
+            return loader.escape_callback(data)
+
+
+class YamlIncludeJinja2(YamlIncludeRaw):
+    yaml_tag = u'!include-jinja2:'
+
+    @classmethod
+    def _from_file(cls, loader, node):
+        contents = cls._open_file(loader, node)
+        if isinstance(contents, LazyLoader):
+            return contents
+        return Jinja2Loader(contents)
 
 
 class DeprecatedTag(BaseYAMLObject):
@@ -320,6 +460,57 @@ class YamlIncludeRawEscapeDeprecated(DeprecatedTag):
     _new = YamlIncludeRawEscape
 
 
+class CustomLoader(object):
+    """Parent class for non-standard loaders."""
+
+
+class Jinja2Loader(CustomLoader):
+    """A loader for Jinja2-templated files."""
+    def __init__(self, contents):
+        self._contents = contents
+
+    def format(self, **kwargs):
+        _template = jinja2.Template(self._contents)
+        _template.environment.undefined = jinja2.StrictUndefined
+        return _template.render(kwargs)
+
+
+class CustomLoaderCollection(object):
+    """Helper class to format a collection of CustomLoader objects"""
+    def __init__(self, sequence):
+        self._data = sequence
+
+    def format(self, *args, **kwargs):
+        return u'\n'.join(item.format(*args, **kwargs) for item in self._data)
+
+
+class LazyLoader(CustomLoader):
+    """Helper class to provide lazy loading of files included using !include*
+    tags where the path to the given file contains unresolved placeholders.
+    """
+
+    def __init__(self, data):
+        # str subclasses can only have one argument, so assume it is a tuple
+        # being passed and unpack as needed
+        self._cls, self._loader, self._node = data
+
+    def __str__(self):
+        return "%s %s" % (self._cls.yaml_tag, self._node.value)
+
+    def __repr__(self):
+        return "%s %s" % (self._cls.yaml_tag, self._node.value)
+
+    def format(self, *args, **kwargs):
+        node = yaml.ScalarNode(
+            tag=self._node.tag,
+            value=self._node.value.format(*args, **kwargs))
+        return self._cls.from_yaml(self._loader, node)
+
+
 def load(stream, **kwargs):
     LocalAnchorLoader.reset_anchors()
     return yaml.load(stream, functools.partial(LocalLoader, **kwargs))
+
+
+def dump(data, stream=None, **kwargs):
+    return yaml.dump(data, stream, Dumper=LocalDumper, **kwargs)

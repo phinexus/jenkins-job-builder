@@ -12,6 +12,9 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
+import logging
+
+import six
 import xml.etree.ElementTree as XML
 
 from jenkins_jobs.errors import InvalidAttributeError
@@ -250,7 +253,7 @@ def findbugs_settings(xml_parent, data):
 def get_value_from_yaml_or_config_file(key, section, data, jjb_config):
     result = data.get(key, '')
     if result == '':
-        result = jjb_config.get_module_config(section, key)
+        result = jjb_config.get_plugin_config(section, key)
     return result
 
 
@@ -339,80 +342,79 @@ def artifactory_optional_props(xml_parent, data, target):
             yaml_prop, '')
 
     common_bool_props = [
-        # xml property name, yaml property name, default value
-        ('deployArtifacts', 'deploy-artifacts', True),
-        ('discardOldBuilds', 'discard-old-builds', False),
-        ('discardBuildArtifacts', 'discard-build-artifacts', False),
-        ('deployBuildInfo', 'publish-build-info', False),
-        ('includeEnvVars', 'env-vars-include', False),
-        ('runChecks', 'run-checks', False),
-        ('includePublishArtifacts', 'include-publish-artifacts', False),
-        ('licenseAutoDiscovery', 'license-auto-discovery', True),
-        ('enableIssueTrackerIntegration', 'enable-issue-tracker-integration',
+        # yaml property name, xml property name, default value
+        ('deploy-artifacts', 'deployArtifacts', True),
+        ('discard-old-builds', 'discardOldBuilds', False),
+        ('discard-build-artifacts', 'discardBuildArtifacts', False),
+        ('publish-build-info', 'deployBuildInfo', False),
+        ('env-vars-include', 'includeEnvVars', False),
+        ('run-checks', 'runChecks', False),
+        ('include-publish-artifacts', 'includePublishArtifacts', False),
+        ('license-auto-discovery', 'licenseAutoDiscovery', True),
+        ('enable-issue-tracker-integration', 'enableIssueTrackerIntegration',
             False),
-        ('aggregateBuildIssues', 'aggregate-build-issues', False),
-        ('blackDuckRunChecks', 'black-duck-run-checks', False),
-        ('blackDuckIncludePublishedArtifacts',
-            'black-duck-include-published-artifacts', False),
-        ('autoCreateMissingComponentRequests',
-            'auto-create-missing-component-requests', True),
-        ('autoDiscardStaleComponentRequests',
-            'auto-discard-stale-component-requests', True),
-        ('filterExcludedArtifactsFromBuild',
-            'filter-excluded-artifacts-from-build', False)
+        ('aggregate-build-issues', 'aggregateBuildIssues', False),
+        ('black-duck-run-checks', 'blackDuckRunChecks', False),
+        ('black-duck-include-published-artifacts',
+            'blackDuckIncludePublishedArtifacts', False),
+        ('auto-create-missing-component-requests',
+            'autoCreateMissingComponentRequests', True),
+        ('auto-discard-stale-component-requests',
+            'autoDiscardStaleComponentRequests', True),
+        ('filter-excluded-artifacts-from-build',
+            'filterExcludedArtifactsFromBuild', False)
     ]
-
-    for (xml_prop, yaml_prop, default_value) in common_bool_props:
-        XML.SubElement(xml_parent, xml_prop).text = str(data.get(
-            yaml_prop, default_value)).lower()
+    convert_mapping_to_xml(
+        xml_parent, data, common_bool_props, fail_required=True)
 
     if 'wrappers' in target:
         wrapper_bool_props = [
-            ('enableResolveArtifacts', 'enable-resolve-artifacts', False),
-            ('disableLicenseAutoDiscovery',
-                'disable-license-auto-discovery', False),
-            ('recordAllDependencies',
-                'record-all-dependencies', False)
+            ('enable-resolve-artifacts', 'enableResolveArtifacts', False),
+            ('disable-license-auto-discovery',
+                'disableLicenseAutoDiscovery', False),
+            ('record-all-dependencies',
+                'recordAllDependencies', False)
         ]
-
-        for (xml_prop, yaml_prop, default_value) in wrapper_bool_props:
-            XML.SubElement(xml_parent, xml_prop).text = str(data.get(
-                yaml_prop, default_value)).lower()
+        convert_mapping_to_xml(
+            xml_parent, data, wrapper_bool_props, fail_required=True)
 
     if 'publishers' in target:
         publisher_bool_props = [
-            ('evenIfUnstable', 'even-if-unstable', False),
-            ('passIdentifiedDownstream', 'pass-identified-downstream', False),
-            ('allowPromotionOfNonStagedBuilds',
-                'allow-promotion-of-non-staged-builds', False)
+            ('even-if-unstable', 'evenIfUnstable', False),
+            ('pass-identified-downstream', 'passIdentifiedDownstream', False),
+            ('allow-promotion-of-non-staged-builds',
+                'allowPromotionOfNonStagedBuilds', False)
         ]
-
-        for (xml_prop, yaml_prop, default_value) in publisher_bool_props:
-            XML.SubElement(xml_parent, xml_prop).text = str(data.get(
-                yaml_prop, default_value)).lower()
+        convert_mapping_to_xml(
+            xml_parent, data, publisher_bool_props, fail_required=True)
 
 
 def artifactory_common_details(details, data):
-    XML.SubElement(details, 'artifactoryName').text = data.get('name', '')
-    XML.SubElement(details, 'artifactoryUrl').text = data.get('url', '')
+    mapping = [
+        ('name', 'artifactoryName', ''),
+        ('url', 'artifactoryUrl', ''),
+    ]
+    convert_mapping_to_xml(details, data, mapping, fail_required=True)
 
 
 def artifactory_repository(xml_parent, data, target):
     if 'release' in target:
-        XML.SubElement(xml_parent, 'keyFromText').text = data.get(
-            'deploy-release-repo-key', '')
-        XML.SubElement(xml_parent, 'keyFromSelect').text = data.get(
-            'deploy-release-repo-key', '')
-        XML.SubElement(xml_parent, 'dynamicMode').text = str(
-            data.get('deploy-dynamic-mode', False)).lower()
+        release_mapping = [
+            ('deploy-release-repo-key', 'keyFromText', ''),
+            ('deploy-release-repo-key', 'keyFromSelect', ''),
+            ('deploy-dynamic-mode', 'dynamicMode', False),
+        ]
+        convert_mapping_to_xml(
+            xml_parent, data, release_mapping, fail_required=True)
 
     if 'snapshot' in target:
-        XML.SubElement(xml_parent, 'keyFromText').text = data.get(
-            'deploy-snapshot-repo-key', '')
-        XML.SubElement(xml_parent, 'keyFromSelect').text = data.get(
-            'deploy-snapshot-repo-key', '')
-        XML.SubElement(xml_parent, 'dynamicMode').text = str(
-            data.get('deploy-dynamic-mode', False)).lower()
+        snapshot_mapping = [
+            ('deploy-snapshot-repo-key', 'keyFromText', ''),
+            ('deploy-snapshot-repo-key', 'keyFromSelect', ''),
+            ('deploy-dynamic-mode', 'dynamicMode', False),
+        ]
+        convert_mapping_to_xml(
+            xml_parent, data, snapshot_mapping, fail_required=True)
 
 
 def append_git_revision_config(parent, config_def):
@@ -432,6 +434,9 @@ def append_git_revision_config(parent, config_def):
 
 def test_fairy_common(xml_element, data):
     xml_element.set('plugin', 'TestFairy')
+    valid_max_duration = ['10m', '60m', '300m', '1440m']
+    valid_interval = [1, 2, 5]
+    valid_video_quality = ['high', 'medium', 'low']
 
     mappings = [
         # General
@@ -441,13 +446,13 @@ def test_fairy_common(xml_element, data):
         ('notify-testers', 'notifyTesters', True),
         ('autoupdate', 'autoUpdate', True),
         # Session
-        ('max-duration', 'maxDuration', '10m'),
+        ('max-duration', 'maxDuration', '10m', valid_max_duration),
         ('record-on-background', 'recordOnBackground', False),
         ('data-only-wifi', 'dataOnlyWifi', False),
         # Video
         ('video-enabled', 'isVideoEnabled', True),
-        ('screenshot-interval', 'screenshotInterval', '1'),
-        ('video-quality', 'videoQuality', 'high'),
+        ('screenshot-interval', 'screenshotInterval', 1, valid_interval),
+        ('video-quality', 'videoQuality', 'high', valid_video_quality),
         # Metrics
         ('cpu', 'cpu', True),
         ('memory', 'memory', True),
@@ -462,6 +467,139 @@ def test_fairy_common(xml_element, data):
         ('advanced-options', 'advancedOptions', '')
     ]
     convert_mapping_to_xml(xml_element, data, mappings, fail_required=True)
+
+
+def trigger_get_parameter_order(registry):
+    logger = logging.getLogger("%s:trigger_get_parameter_order" % __name__)
+    # original order
+    param_order = [
+        'predefined-parameters',
+        'git-revision',
+        'property-file',
+        'current-parameters',
+        'node-parameters',
+        'svn-revision',
+        'restrict-matrix-project',
+        'node-label-name',
+        'node-label',
+        'boolean-parameters',
+    ]
+
+    try:
+        if registry.jjb_config.config_parser.getboolean(
+                '__future__', 'param_order_from_yaml'):
+            param_order = None
+    except six.moves.configparser.NoSectionError:
+        pass
+
+    if param_order:
+        logger.warning(
+            "Using deprecated order for parameter sets in "
+            "triggered-parameterized-builds. This will be changed in a future "
+            "release to inherit the order from the user defined yaml. To "
+            "enable this behaviour immediately, set the config option "
+            "'__future__.param_order_from_yaml' to 'true' and change the "
+            "input job configuration to use the desired order")
+
+    return param_order
+
+
+def trigger_project(tconfigs, project_def, param_order=None):
+
+    logger = logging.getLogger("%s:trigger_project" % __name__)
+    pt_prefix = 'hudson.plugins.parameterizedtrigger.'
+    if param_order:
+        parameters = param_order
+    else:
+        parameters = project_def.keys()
+
+    for param_type in parameters:
+        param_value = project_def.get(param_type)
+        if param_value is None:
+            continue
+
+        if param_type == 'predefined-parameters':
+            params = XML.SubElement(tconfigs, pt_prefix +
+                                    'PredefinedBuildParameters')
+            properties = XML.SubElement(params, 'properties')
+            properties.text = param_value
+        elif param_type == 'git-revision' and param_value:
+            if 'combine-queued-commits' in project_def:
+                logger.warning(
+                    "'combine-queued-commit' has moved to reside under "
+                    "'git-revision' configuration, please update your "
+                    "configs as support for this will be removed."
+                )
+                git_revision = {
+                    'combine-queued-commits':
+                    project_def['combine-queued-commits']
+                }
+            else:
+                git_revision = project_def['git-revision']
+            append_git_revision_config(tconfigs, git_revision)
+        elif param_type == 'property-file':
+            params = XML.SubElement(tconfigs,
+                                    pt_prefix + 'FileBuildParameters')
+            property_file_mapping = [
+                ('property-file', 'propertiesFile', None),
+                ('fail-on-missing', 'failTriggerOnMissing', False)]
+            convert_mapping_to_xml(params, project_def,
+                property_file_mapping, fail_required=True)
+            if 'file-encoding' in project_def:
+                XML.SubElement(params, 'encoding'
+                               ).text = project_def['file-encoding']
+            if 'use-matrix-child-files' in project_def:
+                # TODO: These parameters only affect execution in
+                # publishers of matrix projects; we should warn if they are
+                # used in other contexts.
+                use_matrix_child_files_mapping = [
+                    ('use-matrix-child-files', "useMatrixChild", None),
+                    ('matrix-child-combination-filter',
+                        "combinationFilter", ''),
+                    ('only-exact-matrix-child-runs', "onlyExactRuns", False)]
+                convert_mapping_to_xml(params, project_def,
+                    use_matrix_child_files_mapping, fail_required=True)
+        elif param_type == 'current-parameters' and param_value:
+            XML.SubElement(tconfigs, pt_prefix + 'CurrentBuildParameters')
+        elif param_type == 'node-parameters' and param_value:
+            XML.SubElement(tconfigs, pt_prefix + 'NodeParameters')
+        elif param_type == 'svn-revision' and param_value:
+            param = XML.SubElement(tconfigs, pt_prefix +
+                                   'SubversionRevisionBuildParameters')
+            XML.SubElement(param, 'includeUpstreamParameters').text = str(
+                project_def.get('include-upstream', False)).lower()
+        elif param_type == 'restrict-matrix-project' and param_value:
+            subset = XML.SubElement(tconfigs, pt_prefix +
+                                    'matrix.MatrixSubsetBuildParameters')
+            XML.SubElement(subset, 'filter'
+                           ).text = project_def['restrict-matrix-project']
+        elif (param_type == 'node-label-name' or
+                param_type == 'node-label'):
+            tag_name = ('org.jvnet.jenkins.plugins.nodelabelparameter.'
+                        'parameterizedtrigger.NodeLabelBuildParameter')
+            if tconfigs.find(tag_name) is not None:
+                # already processed and can only have one
+                continue
+            params = XML.SubElement(tconfigs, tag_name)
+            name = XML.SubElement(params, 'name')
+            if 'node-label-name' in project_def:
+                name.text = project_def['node-label-name']
+            label = XML.SubElement(params, 'nodeLabel')
+            if 'node-label' in project_def:
+                label.text = project_def['node-label']
+        elif param_type == 'boolean-parameters' and param_value:
+            params = XML.SubElement(tconfigs,
+                                    pt_prefix + 'BooleanParameters')
+            config_tag = XML.SubElement(params, 'configs')
+            param_tag_text = pt_prefix + 'BooleanParameterConfig'
+            params_list = param_value
+            for name, value in params_list.items():
+                param_tag = XML.SubElement(config_tag, param_tag_text)
+                mapping = [
+                    ('', 'name', name),
+                    ('', 'value', value or False)]
+                convert_mapping_to_xml(param_tag, project_def,
+                    mapping, fail_required=True)
 
 
 def convert_mapping_to_xml(parent, data, mapping, fail_required=False):
@@ -525,3 +663,29 @@ def convert_mapping_to_xml(parent, data, mapping, fail_required=False):
             XML.SubElement(parent, xmlname).text = str(valid_dict[val])
         else:
             XML.SubElement(parent, xmlname).text = str(val)
+
+
+def jms_messaging_common(parent, subelement, data):
+    """JMS common helper function
+
+    Pass the XML parent and the specific subelement from the builder or the
+    publisher.
+
+    data is passed to mapper helper function to map yaml fields to XML fields
+    """
+    namespace = XML.SubElement(parent,
+                               subelement)
+
+    if 'override-topic' in data:
+        overrides = XML.SubElement(namespace, 'overrides')
+        XML.SubElement(overrides,
+                       'topic').text = str(data.get('override-topic', ''))
+
+    mapping = [
+        # option, xml name, default value
+        ("provider-name", 'providerName', ''),
+        ("msg-type", 'messageType', 'CodeQualityChecksDone'),
+        ("msg-props", 'messageProperties', ''),
+        ("msg-content", 'messageContent', ''),
+    ]
+    convert_mapping_to_xml(namespace, data, mapping, fail_required=True)

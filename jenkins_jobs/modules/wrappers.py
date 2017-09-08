@@ -110,27 +110,30 @@ def docker_custom_build_env(registry, xml_parent, data):
     image_type = data['image-type']
     if image_type == 'dockerfile':
         selectorobj.set('class', core_prefix + 'DockerfileImageSelector')
-        XML.SubElement(selectorobj, 'contextPath').text = data.get(
-            'context-path', '.')
-        XML.SubElement(selectorobj, 'dockerfile').text = data.get(
-            'dockerfile', 'Dockerfile')
+        dockerfile_mapping = [
+            ('context-path', 'contextPath', '.'),
+            ('dockerfile', 'dockerfile', 'Dockerfile')]
+        convert_mapping_to_xml(selectorobj, data,
+            dockerfile_mapping, fail_required=True)
+
     elif image_type == 'pull':
         selectorobj.set('class', core_prefix + 'PullDockerImageSelector')
-        XML.SubElement(selectorobj, 'image').text = data.get(
-            'image', '')
+        pull_mapping = [('image', 'image', '')]
+        convert_mapping_to_xml(selectorobj, data,
+            pull_mapping, fail_required=True)
 
     XML.SubElement(entry_xml, 'dockerInstallation').text = data.get(
         'docker-tool', 'Default')
 
     host = XML.SubElement(entry_xml, 'dockerHost')
     host.set('plugin', 'docker-commons')
-    if data.get('host'):
-        XML.SubElement(host, 'uri').text = data['host']
-    if data.get('credentials-id'):
-        XML.SubElement(host, 'credentialsId').text = data['credentials-id']
+    mapping_optional = [
+        ('host', 'uri', None),
+        ('credentials-id', 'credentialsId', None)]
+    convert_mapping_to_xml(host, data, mapping_optional, fail_required=False)
+
     XML.SubElement(entry_xml, 'dockerRegistryCredentials').text = data.get(
         'registry-credentials-id', '')
-
     volumesobj = XML.SubElement(entry_xml, 'volumes')
     volumes = data.get('volumes', [])
     if not volumes:
@@ -143,16 +146,14 @@ def docker_custom_build_env(registry, xml_parent, data):
                 'host-path', '')
             XML.SubElement(volumeobj, 'path').text = volume['volume'].get(
                 'path', '')
-
-    XML.SubElement(entry_xml, 'forcePull').text = str(data.get(
-        'force-pull', False)).lower()
-    XML.SubElement(entry_xml, 'privileged').text = str(data.get(
-        'privileged', False)).lower()
-    XML.SubElement(entry_xml, 'verbose').text = str(data.get(
-        'verbose', False)).lower()
-    XML.SubElement(entry_xml, 'group').text = data.get('group', '')
-    XML.SubElement(entry_xml, 'command').text = data.get('command', '/bin/cat')
-    XML.SubElement(entry_xml, 'net').text = data.get('net', 'bridge')
+    mapping = [
+        ('force-pull', 'forcePull', False),
+        ('privileged', 'privileged', False),
+        ('verbose', 'verbose', False),
+        ('group', 'group', ''),
+        ('command', 'command', '/bin/cat'),
+        ('net', 'net', 'bridge')]
+    convert_mapping_to_xml(entry_xml, data, mapping, fail_required=True)
 
 
 def ci_skip(registry, xml_parent, data):
@@ -327,34 +328,37 @@ def timeout(registry, xml_parent, data):
                 twrapper, 'strategy',
                 {'class': "hudson.plugins.build_timeout."
                           "impl.AbsoluteTimeOutStrategy"})
-            XML.SubElement(strategy_element, 'timeoutMinutes'
-                           ).text = str(data.get('timeout', 3))
+            mapping = [('timeout', 'timeoutMinutes', 3)]
+            convert_mapping_to_xml(strategy_element,
+                data, mapping, fail_required=True)
         elif strategy == "no-activity":
             strategy_element = XML.SubElement(
                 twrapper, 'strategy',
                 {'class': "hudson.plugins.build_timeout."
                           "impl.NoActivityTimeOutStrategy"})
             timeout_sec = int(data.get('timeout', 3)) * MIN_TO_SEC
-            XML.SubElement(strategy_element,
-                           'timeoutSecondsString').text = str(timeout_sec)
+            mapping = [('', 'timeoutSecondsString', timeout_sec)]
+            convert_mapping_to_xml(strategy_element,
+                data, mapping, fail_required=True)
         elif strategy == "likely-stuck":
             strategy_element = XML.SubElement(
                 twrapper, 'strategy',
                 {'class': "hudson.plugins.build_timeout."
                           "impl.LikelyStuckTimeOutStrategy"})
-            XML.SubElement(strategy_element,
-                           'timeoutMinutes').text = str(data.get('timeout', 3))
+            mapping = [('timeout', 'timeoutMinutes', 3)]
+            convert_mapping_to_xml(strategy_element,
+                data, mapping, fail_required=True)
         elif strategy == "elastic":
             strategy_element = XML.SubElement(
                 twrapper, 'strategy',
                 {'class': "hudson.plugins.build_timeout."
                           "impl.ElasticTimeOutStrategy"})
-            XML.SubElement(strategy_element, 'timeoutPercentage'
-                           ).text = str(data.get('elastic-percentage', 0))
-            XML.SubElement(strategy_element, 'numberOfBuilds'
-                           ).text = str(data.get('elastic-number-builds', 0))
-            XML.SubElement(strategy_element, 'timeoutMinutesElasticDefault'
-                           ).text = str(data.get('elastic-default-timeout', 3))
+            mapping = [
+                ('elastic-percentage', 'timeoutPercentage', 0),
+                ('elastic-number-builds', 'numberOfBuilds', 0),
+                ('elastic-default-timeout', 'timeoutMinutesElasticDefault', 3)]
+            convert_mapping_to_xml(strategy_element,
+                data, mapping, fail_required=True)
 
         elif strategy == "deadline":
             strategy_element = XML.SubElement(
@@ -362,11 +366,12 @@ def timeout(registry, xml_parent, data):
                 {'class': "hudson.plugins.build_timeout."
                           "impl.DeadlineTimeOutStrategy"})
             deadline_time = str(data.get('deadline-time', '0:00:00'))
-            XML.SubElement(strategy_element,
-                           'deadlineTime').text = str(deadline_time)
             deadline_tolerance = int(data.get('deadline-tolerance', 1))
-            XML.SubElement(strategy_element, 'deadlineToleranceInMinutes'
-                           ).text = str(deadline_tolerance)
+            mapping = [
+                ('', 'deadlineTime', deadline_time),
+                ('', 'deadlineToleranceInMinutes', deadline_tolerance)]
+            convert_mapping_to_xml(strategy_element,
+                data, mapping, fail_required=True)
 
         actions = []
 
@@ -398,26 +403,19 @@ def timeout(registry, xml_parent, data):
             else:
                 raise JenkinsJobsException("Unsupported BuiltTimeoutWrapper "
                                            "plugin action: {0}".format(action))
-        timeout_env_var = data.get('timeout-var')
-        if timeout_env_var:
-            XML.SubElement(twrapper,
-                           'timeoutEnvVar').text = str(timeout_env_var)
+        mapping = [('timeout-var', 'timeoutEnvVar', None)]
+        convert_mapping_to_xml(twrapper,
+            data, mapping, fail_required=False)
     else:
-        XML.SubElement(twrapper,
-                       'timeoutMinutes').text = str(data.get('timeout', 3))
-        timeout_env_var = data.get('timeout-var')
-        if timeout_env_var:
-            XML.SubElement(twrapper,
-                           'timeoutEnvVar').text = str(timeout_env_var)
-        XML.SubElement(twrapper, 'failBuild'
-                       ).text = str(data.get('fail', 'false')).lower()
-        XML.SubElement(twrapper, 'writingDescription'
-                       ).text = str(data.get('write-description', 'false')
-                                    ).lower()
-        XML.SubElement(twrapper, 'timeoutPercentage'
-                       ).text = str(data.get('elastic-percentage', 0))
-        XML.SubElement(twrapper, 'timeoutMinutesElasticDefault'
-                       ).text = str(data.get('elastic-default-timeout', 3))
+        mapping = [
+            ('timeout', 'timeoutMinutes', 3),
+            ('timeout-var', 'timeoutEnvVar', None),
+            ('fail', 'failBuild', 'false'),
+            ('write-description', 'writingDescription', 'false'),
+            ('elastic-percentage', 'timeoutPercentage', 0),
+            ('elastic-default-timeout', 'timeoutMinutesElasticDefault', 3)]
+        convert_mapping_to_xml(twrapper,
+                data, mapping, fail_required=False)
 
         tout_type = str(data.get('type', 'absolute')).lower()
         if tout_type == 'likely-stuck':
@@ -459,11 +457,8 @@ def ansicolor(registry, xml_parent, data):
     cwrapper = XML.SubElement(
         xml_parent,
         'hudson.plugins.ansicolor.AnsiColorBuildWrapper')
-
-    # Optional colormap
-    colormap = data.get('colormap')
-    if colormap:
-        XML.SubElement(cwrapper, 'colorMapName').text = colormap
+    mapping = [('colormap', 'colorMapName', None)]
+    convert_mapping_to_xml(cwrapper, data, mapping, fail_required=False)
 
 
 def build_keeper(registry, xml_parent, data):
@@ -603,37 +598,45 @@ def workspace_cleanup(registry, xml_parent, data):
     :arg str external-deletion-command: external deletion command to run
         against files and directories
 
-    Example:
+    Full Example:
 
     .. literalinclude::
-        /../../tests/wrappers/fixtures/workspace-cleanup001.yaml
+        /../../tests/wrappers/fixtures/workspace-cleanup-full.yaml
+       :language: yaml
+
+    Minimal Example:
+
+    .. literalinclude::
+        /../../tests/wrappers/fixtures/workspace-cleanup-min.yaml
        :language: yaml
     """
 
     p = XML.SubElement(xml_parent,
                        'hudson.plugins.ws__cleanup.PreBuildCleanup')
     p.set("plugin", "ws-cleanup")
+
     if "include" in data or "exclude" in data:
         patterns = XML.SubElement(p, 'patterns')
 
     for inc in data.get("include", []):
         ptrn = XML.SubElement(patterns, 'hudson.plugins.ws__cleanup.Pattern')
-        XML.SubElement(ptrn, 'pattern').text = inc
-        XML.SubElement(ptrn, 'type').text = "INCLUDE"
+        mapping = [
+            ('', 'pattern', inc),
+            ('', 'type', "INCLUDE")]
+        convert_mapping_to_xml(ptrn, data, mapping, fail_required=True)
 
     for exc in data.get("exclude", []):
         ptrn = XML.SubElement(patterns, 'hudson.plugins.ws__cleanup.Pattern')
-        XML.SubElement(ptrn, 'pattern').text = exc
-        XML.SubElement(ptrn, 'type').text = "EXCLUDE"
+        mapping = [
+            ('', 'pattern', exc),
+            ('', 'type', "EXCLUDE")]
+        convert_mapping_to_xml(ptrn, data, mapping, fail_required=True)
 
-    deldirs = XML.SubElement(p, 'deleteDirs')
-    deldirs.text = str(data.get("dirmatch", False)).lower()
-
-    XML.SubElement(p, 'cleanupParameter').text = str(
-        data.get('check-parameter', ''))
-
-    XML.SubElement(p, 'externalDelete').text = str(
-        data.get('external-deletion-command', ''))
+    mapping = [
+        ("dirmatch", 'deleteDirs', False),
+        ('check-parameter', 'cleanupParameter', ''),
+        ('external-deletion-command', 'externalDelete', '')]
+    convert_mapping_to_xml(p, data, mapping, fail_required=True)
 
 
 def m2_repository_cleanup(registry, xml_parent, data):
@@ -807,7 +810,8 @@ def build_name(registry, xml_parent, data):
     bsetter = XML.SubElement(xml_parent,
                              'org.jenkinsci.plugins.buildnamesetter.'
                              'BuildNameSetter')
-    XML.SubElement(bsetter, 'template').text = data['name']
+    mapping = [('name', 'template', None)]
+    convert_mapping_to_xml(bsetter, data, mapping, fail_required=True)
 
 
 def port_allocator(registry, xml_parent, data):
@@ -898,19 +902,14 @@ def copy_to_slave(registry, xml_parent, data):
 
     XML.SubElement(cs, 'includes').text = ','.join(data.get('includes', ['']))
     XML.SubElement(cs, 'excludes').text = ','.join(data.get('excludes', ['']))
-    XML.SubElement(cs, 'flatten').text = \
-        str(data.get('flatten', False)).lower()
-    XML.SubElement(cs, 'includeAntExcludes').text = \
-        str(data.get('include-ant-excludes', False)).lower()
 
-    rel = str(data.get('relative-to', 'userContent'))
-    opt = ('home', 'somewhereElse', 'userContent', 'workspace')
-    if rel not in opt:
-        raise ValueError('relative-to must be one of %r' % opt)
-    XML.SubElement(cs, 'relativeTo').text = rel
-
-    # seems to always be false, can't find it in source code
-    XML.SubElement(cs, 'hudsonHomeRelative').text = 'false'
+    locations = ['home', 'somewhereElse', 'userContent', 'workspace']
+    mapping = [
+        ('flatten', 'flatten', False),
+        ('include-ant-excludes', 'includeAntExcludes', False),
+        ('relative-to', 'relativeTo', 'userContent', locations),
+        ('', 'hudsonHomeRelative', False)]
+    convert_mapping_to_xml(cs, data, mapping, fail_required=True)
 
 
 def inject(registry, xml_parent, data):
@@ -918,10 +917,11 @@ def inject(registry, xml_parent, data):
     Add or override environment variables to the whole build process
     Requires the Jenkins :jenkins-wiki:`EnvInject Plugin <EnvInject+Plugin>`.
 
-    :arg str properties-file: path to the properties file (default '')
-    :arg str properties-content: key value pair of properties (default '')
-    :arg str script-file: path to the script file (default '')
-    :arg str script-content: contents of a script (default '')
+    :arg str properties-file: path to the properties file (optional)
+    :arg str properties-content: key value pair of properties (optional)
+    :arg str script-file: path to the script file (optional)
+    :arg str script-content: contents of a script (optional)
+    :arg bool load-from-master: load files from master (default false)
 
     Example::
 
@@ -934,15 +934,14 @@ def inject(registry, xml_parent, data):
     """
     eib = XML.SubElement(xml_parent, 'EnvInjectBuildWrapper')
     info = XML.SubElement(eib, 'info')
-    jenkins_jobs.modules.base.add_nonblank_xml_subelement(
-        info, 'propertiesFilePath', data.get('properties-file'))
-    jenkins_jobs.modules.base.add_nonblank_xml_subelement(
-        info, 'propertiesContent', data.get('properties-content'))
-    jenkins_jobs.modules.base.add_nonblank_xml_subelement(
-        info, 'scriptFilePath', data.get('script-file'))
-    jenkins_jobs.modules.base.add_nonblank_xml_subelement(
-        info, 'scriptContent', data.get('script-content'))
-    XML.SubElement(info, 'loadFilesFromMaster').text = 'false'
+    mapping = [
+        ('properties-file', 'propertiesFilePath', None),
+        ('properties-content', 'propertiesContent', None),
+        ('script-file', 'scriptFilePath', None),
+        ('script-content', 'scriptContent', None),
+        ('load-from-master', 'loadFilesFromMaster', False),
+    ]
+    convert_mapping_to_xml(info, data, mapping, fail_required=False)
 
 
 def inject_ownership_variables(registry, xml_parent, data):
@@ -963,10 +962,10 @@ def inject_ownership_variables(registry, xml_parent, data):
     """
     ownership = XML.SubElement(xml_parent, 'com.synopsys.arc.jenkins.plugins.'
                                'ownership.wrappers.OwnershipBuildWrapper')
-    XML.SubElement(ownership, 'injectNodeOwnership').text = \
-        str(data.get('node-variables', False)).lower()
-    XML.SubElement(ownership, 'injectJobOwnership').text = \
-        str(data.get('job-variables', False)).lower()
+    mapping = [
+        ('node-variables', 'injectNodeOwnership', False),
+        ('job-variables', 'injectJobOwnership', False)]
+    convert_mapping_to_xml(ownership, data, mapping, fail_required=True)
 
 
 def inject_passwords(registry, xml_parent, data):
@@ -975,7 +974,7 @@ def inject_passwords(registry, xml_parent, data):
     Requires the Jenkins :jenkins-wiki:`EnvInject Plugin <EnvInject+Plugin>`.
 
     :arg bool global: inject global passwords to the job
-    :arg bool mask-password-params: mask passsword parameters
+    :arg bool mask-password-params: mask password parameters
     :arg list job-passwords: key value pair of job passwords
 
         :Parameter: * **name** (`str`) Name of password
@@ -1006,7 +1005,7 @@ def env_file(registry, xml_parent, data):
     Requires the Jenkins :jenkins-wiki:`Environment File Plugin
     <Envfile+Plugin>`.
 
-    :arg str properties-file: path to the properties file (default '')
+    :arg str properties-file: path to the properties file (optional)
 
     Example::
 
@@ -1016,8 +1015,10 @@ def env_file(registry, xml_parent, data):
     """
     eib = XML.SubElement(xml_parent,
                          'hudson.plugins.envfile.EnvFileBuildWrapper')
-    jenkins_jobs.modules.base.add_nonblank_xml_subelement(
-        eib, 'filePath', data.get('properties-file'))
+    mapping = [
+        ('properties-file', 'filePath', None),
+    ]
+    convert_mapping_to_xml(eib, data, mapping, fail_required=False)
 
 
 def env_script(registry, xml_parent, data):
@@ -1042,21 +1043,17 @@ def env_script(registry, xml_parent, data):
 
     """
     el = XML.SubElement(xml_parent, 'com.lookout.jenkins.EnvironmentScript')
-    XML.SubElement(el, 'script').text = data.get('script-content', '')
 
     valid_script_types = {
         'unix-script': 'unixScript',
         'power-shell': 'powerShell',
         'batch-script': 'batchScript',
     }
-    script_type = data.get('script-type', 'unix-script')
-    if script_type not in valid_script_types:
-        raise InvalidAttributeError('script-type', script_type,
-                                    valid_script_types)
-    XML.SubElement(el, 'scriptType').text = valid_script_types[script_type]
-
-    only_on_parent = str(data.get('only-run-on-parent', False)).lower()
-    XML.SubElement(el, 'onlyRunOnParent').text = only_on_parent
+    mapping = [
+        ('script-content', 'script', ''),
+        ('script-type', 'scriptType', 'unix-script', valid_script_types),
+        ('only-run-on-parent', 'onlyRunOnParent', False)]
+    convert_mapping_to_xml(el, data, mapping, fail_required=True)
 
 
 def jclouds(registry, xml_parent, data):
@@ -1142,23 +1139,17 @@ def openstack(registry, xml_parent, data):
             instances_to_run = XML.SubElement(
                 instances_wrapper, tag_prefix + 'InstancesToRun')
 
-            try:
-                cloud_name = instance['cloud-name']
-                template_name = instance['template-name']
-            except KeyError as exception:
-                raise MissingAttributeError(exception.args[0])
-
-            XML.SubElement(instances_to_run, 'cloudName').text = cloud_name
+            instance_mapping = [('cloud-name', 'cloudName', None),
+                ('count', 'count', 1)]
 
             if instance.get('manual-template', False):
-                XML.SubElement(instances_to_run,
-                               'manualTemplateName').text = template_name
+                instance_mapping.append(('template-name',
+                    'manualTemplateName', None))
             else:
-                XML.SubElement(instances_to_run,
-                               'templateName').text = template_name
-
-            XML.SubElement(instances_to_run, 'count').text = str(
-                instance.get('count', 1))
+                instance_mapping.append(('template-name',
+                    'templateName', None))
+            convert_mapping_to_xml(instances_to_run,
+                instance, instance_mapping, fail_required=True)
 
     if data.get('single-use', False):
         XML.SubElement(xml_parent, tag_prefix + 'JCloudsOneOffSlave')
@@ -1333,6 +1324,34 @@ def sauce_ondemand(registry, xml_parent, data):
     XML.SubElement(sauce, 'options').text = options
 
 
+def sonar(registry, xml_parent, data):
+    """yaml: sonar
+    Wrapper for SonarQube Plugin
+    Requires :jenkins-wiki:`SonarQube plugin <SonarQube+plugin>`
+
+    :arg str install-name: Release goals and options (default '')
+
+    Minimal Example:
+
+    .. literalinclude:: /../../tests/wrappers/fixtures/sonar-minimal.yaml
+       :language: yaml
+
+    Full Example:
+
+    .. literalinclude:: /../../tests/wrappers/fixtures/sonar-full.yaml
+       :language: yaml
+    """
+    sonar = XML.SubElement(
+        xml_parent, 'hudson.plugins.sonar.SonarBuildWrapper')
+    sonar.set('plugin', 'sonar')
+
+    if data.get('install-name'):
+        mapping = [
+            ('install-name', 'installationName', ''),
+        ]
+        convert_mapping_to_xml(sonar, data, mapping, fail_required=True)
+
+
 def pathignore(registry, xml_parent, data):
     """yaml: pathignore
     This plugin allows SCM-triggered jobs to ignore
@@ -1374,33 +1393,34 @@ def pre_scm_buildstep(registry, xml_parent, data):
     Execute a Build Step before running the SCM
     Requires the Jenkins :jenkins-wiki:`pre-scm-buildstep <pre-scm-buildstep>`.
 
+    :arg string failOnError: Specifies if the job should fail on error
+        (plugin >= 0.3) (default false).
     :arg list buildsteps: List of build steps to execute
 
         :Buildstep: Any acceptable builder, as seen in the example
 
-    Example::
+    Example:
 
-      wrappers:
-        - pre-scm-buildstep:
-          - shell: |
-              #!/bin/bash
-              echo "Doing somethiung cool"
-          - shell: |
-              #!/bin/zsh
-              echo "Doing somethin cool with zsh"
-          - ant: "target1 target2"
-            ant-name: "Standard Ant"
-          - inject:
-               properties-file: example.prop
-               properties-content: EXAMPLE=foo-bar
+    .. literalinclude::
+       /../../tests/wrappers/fixtures/pre-scm-buildstep001.yaml
+       :language: yaml
     """
+    # Get plugin information to maintain backwards compatibility
+    info = registry.get_plugin_info('preSCMbuildstep')
+    version = pkg_resources.parse_version(info.get('version', "0"))
+
     bsp = XML.SubElement(xml_parent,
                          'org.jenkinsci.plugins.preSCMbuildstep.'
                          'PreSCMBuildStepsWrapper')
     bs = XML.SubElement(bsp, 'buildSteps')
-    for step in data:
+    stepList = data if type(data) is list else data.get('buildsteps')
+
+    for step in stepList:
         for edited_node in create_builders(registry, step):
             bs.append(edited_node)
+    if version >= pkg_resources.parse_version("0.3"):
+        mapping = [('failOnError', 'failOnError', False)]
+        convert_mapping_to_xml(bsp, data, mapping, fail_required=True)
 
 
 def logstash(registry, xml_parent, data):
@@ -1432,34 +1452,22 @@ def logstash(registry, xml_parent, data):
                               'LogstashBuildWrapper')
     logstash.set('plugin', 'logstash@0.8.0')
 
-    redis_bool = XML.SubElement(logstash, 'useRedis')
-    redis_bool.text = str(data.get('use-redis', True)).lower()
+    mapping = [('use-redis', 'useRedis', True)]
+    convert_mapping_to_xml(logstash, data, mapping, fail_required=True)
 
     if data.get('use-redis'):
         redis_config = data.get('redis', {})
         redis_sub_element = XML.SubElement(logstash, 'redis')
 
-        host_sub_element = XML.SubElement(redis_sub_element, 'host')
-        host_sub_element.text = str(
-            redis_config.get('host', 'localhost'))
-
-        port_sub_element = XML.SubElement(redis_sub_element, 'port')
-        port_sub_element.text = str(redis_config.get('port', '6379'))
-
-        database_numb_sub_element = XML.SubElement(redis_sub_element, 'numb')
-        database_numb_sub_element.text = \
-            str(redis_config.get('database-number', '0'))
-
-        database_pass_sub_element = XML.SubElement(redis_sub_element, 'pass')
-        database_pass_sub_element.text = \
-            str(redis_config.get('database-password', ''))
-
-        data_type_sub_element = XML.SubElement(redis_sub_element, 'dataType')
-        data_type_sub_element.text = \
-            str(redis_config.get('data-type', 'list'))
-
-        key_sub_element = XML.SubElement(redis_sub_element, 'key')
-        key_sub_element.text = str(redis_config.get('key', 'logstash'))
+        mapping = [
+            ('host', 'host', 'localhost'),
+            ('port', 'port', '6379'),
+            ('database-number', 'numb', '0'),
+            ('database-password', 'pass', ''),
+            ('data-type', 'dataType', 'list'),
+            ('key', 'key', 'logstash')]
+        convert_mapping_to_xml(redis_sub_element,
+            redis_config, mapping, fail_required=True)
 
 
 def mongo_db(registry, xml_parent, data):
@@ -1544,14 +1552,15 @@ def matrix_tie_parent(registry, xml_parent, data):
     You can use the top level ``node`` parameter to control where the parent
     job is tied in Jenkins 1.532 and higher.
 
-    :arg str node: Name of the node.
+    :arg str node: Name of the node (required)
 
     Example:
 
     .. literalinclude:: /../../tests/wrappers/fixtures/matrix-tie-parent.yaml
     """
     mtp = XML.SubElement(xml_parent, 'matrixtieparent.BuildWrapperMtp')
-    XML.SubElement(mtp, 'labelName').text = data['node']
+    mapping = [('node', 'labelName', None)]
+    convert_mapping_to_xml(mtp, data, mapping, fail_required=True)
 
 
 def exclusion(registry, xml_parent, data):
@@ -1575,10 +1584,10 @@ def exclusion(registry, xml_parent, data):
     ids = XML.SubElement(exl, 'ids')
     resources = data.get('resources', [])
     for resource in resources:
-        dit = \
-            XML.SubElement(ids,
+        dit = XML.SubElement(ids,
                            'org.jvnet.hudson.plugins.exclusion.DefaultIdType')
-        XML.SubElement(dit, 'name').text = str(resource).upper()
+        mapping = [('', 'name', resource.upper())]
+        convert_mapping_to_xml(dit, data, mapping, fail_required=True)
 
 
 def ssh_agent_credentials(registry, xml_parent, data):
@@ -1779,17 +1788,16 @@ def custom_tools(registry, xml_parent, data):
     tool_node = base + '.CustomToolInstallWrapper_-SelectedTool'
     for tool in tools:
         tool_wrapper = XML.SubElement(wrapper_tools, tool_node)
-        XML.SubElement(tool_wrapper, 'name').text = str(tool)
+        mapping = [('', 'name', tool)]
+        convert_mapping_to_xml(tool_wrapper, data, mapping, fail_required=True)
 
     opts = XML.SubElement(wrapper,
                           'multiconfigOptions')
-    skip_install = str(data.get('skip-master-install', 'false'))
-    XML.SubElement(opts,
-                   'skipMasterInstallation').text = skip_install
+    mapping = [('skip-master-install', 'skipMasterInstallation', False)]
+    convert_mapping_to_xml(opts, data, mapping, fail_required=True)
 
-    convert_home = str(data.get('convert-homes-to-upper', 'false'))
-    XML.SubElement(wrapper,
-                   'convertHomesToUppercase').text = convert_home
+    mapping = [('convert-homes-to-upper', 'convertHomesToUppercase', False)]
+    convert_mapping_to_xml(wrapper, data, mapping, fail_required=True)
 
 
 def nodejs_installator(registry, xml_parent, data):
@@ -1797,7 +1805,7 @@ def nodejs_installator(registry, xml_parent, data):
     Requires the Jenkins :jenkins-wiki:`NodeJS Plugin
     <NodeJS+Plugin>`.
 
-    :arg str name: nodejs installation name
+    :arg str name: nodejs installation name (required)
 
     Example:
 
@@ -1807,11 +1815,8 @@ def nodejs_installator(registry, xml_parent, data):
     npm_node = XML.SubElement(xml_parent,
                               'jenkins.plugins.nodejs.tools.'
                               'NpmPackagesBuildWrapper')
-
-    try:
-        XML.SubElement(npm_node, 'nodeJSInstallationName').text = data['name']
-    except KeyError as e:
-        raise MissingAttributeError(e.args[0])
+    mapping = [('name', 'nodeJSInstallationName', None)]
+    convert_mapping_to_xml(npm_node, data, mapping, fail_required=True)
 
 
 def xvnc(registry, xml_parent, data):
@@ -1861,8 +1866,8 @@ def job_log_logger(registry, xml_parent, data):
     top = XML.SubElement(xml_parent,
                          'org.jenkins.ci.plugins.jobloglogger.'
                          'JobLogLoggerBuildWrapper')
-    XML.SubElement(top, 'suppressEmpty').text = str(
-        data.get('suppress-empty', True)).lower()
+    mapping = [('suppress-empty', 'suppressEmpty', True)]
+    convert_mapping_to_xml(top, data, mapping, fail_required=True)
 
 
 def xvfb(registry, xml_parent, data):
@@ -1870,60 +1875,55 @@ def xvfb(registry, xml_parent, data):
     Enable xvfb during the build.
     Requires the Jenkins :jenkins-wiki:`Xvfb Plugin <Xvfb+Plugin>`.
 
-    :arg str installation-name: The name of the Xvfb tool instalation
-                                (default default)
+    :arg str installation-name: The name of the Xvfb tool instalation (default
+        'default')
     :arg bool auto-display-name: Uses the -displayfd option of Xvfb by which it
-                                 chooses it's own display name
-                                 (default false)
+        chooses it's own display name (default false)
     :arg str display-name: Ordinal of the display Xvfb will be running on, if
-                           left empty choosen based on current build executor
-                           number (optional)
+        left empty choosen based on current build executor number (default '')
     :arg str assigned-labels: If you want to start Xvfb only on specific nodes
-                              specify its name or label (optional)
+        specify its name or label (default '')
     :arg bool parallel-build: When running multiple Jenkins nodes on the same
-                              machine this setting influences the display
-                              number generation (default false)
+        machine this setting influences the display number generation (default
+        false)
     :arg int timeout: A timeout of given seconds to wait before returning
-                      control to the job (default 0)
-    :arg str screen: Resolution and color depth. (default 1024x768x24)
-    :arg str display-name-offset: Offset for display names. (default 1)
+        control to the job (default 0)
+    :arg str screen: Resolution and color depth. (default '1024x768x24')
+    :arg int display-name-offset: Offset for display names. (default 1)
     :arg str additional-options: Additional options to be added with the
-                                 options above to the Xvfb command line
-                                 (optional)
+        options above to the Xvfb command line (default '')
     :arg bool debug: If Xvfb output should appear in console log of this job
-                     (default false)
+        (default false)
     :arg bool shutdown-with-build: Should the display be kept until the whole
-                                   job ends (default false)
+        job ends (default false)
 
-    Example:
+    Full Example:
 
-    .. literalinclude:: /../../tests/wrappers/fixtures/xvfb001.yaml
+    .. literalinclude:: /../../tests/wrappers/fixtures/xvfb-full.yaml
+       :language: yaml
 
+    Minimal Example:
+
+    .. literalinclude:: /../../tests/wrappers/fixtures/xvfb-minimal.yaml
+       :language: yaml
     """
     xwrapper = XML.SubElement(xml_parent,
                               'org.jenkinsci.plugins.xvfb.XvfbBuildWrapper')
-    XML.SubElement(xwrapper, 'installationName').text = str(data.get(
-        'installation-name', 'default'))
-    XML.SubElement(xwrapper, 'autoDisplayName').text = str(data.get(
-        'auto-display-name', False)).lower()
-    if 'display-name' in data:
-        XML.SubElement(xwrapper, 'displayName').text = str(data.get(
-            'display-name', ''))
-    XML.SubElement(xwrapper, 'assignedLabels').text = str(data.get(
-        'assigned-labels', ''))
-    XML.SubElement(xwrapper, 'parallelBuild').text = str(data.get(
-        'parallel-build', False)).lower()
-    XML.SubElement(xwrapper, 'timeout').text = str(data.get('timeout', '0'))
-    XML.SubElement(xwrapper, 'screen').text = str(data.get(
-        'screen', '1024x768x24'))
-    XML.SubElement(xwrapper, 'displayNameOffset').text = str(data.get(
-        'display-name-offset', '1'))
-    XML.SubElement(xwrapper, 'additionalOptions').text = str(data.get(
-        'additional-options', ''))
-    XML.SubElement(xwrapper, 'debug').text = str(data.get(
-        'debug', False)).lower()
-    XML.SubElement(xwrapper, 'shutdownWithBuild').text = str(data.get(
-        'shutdown-with-build', False)).lower()
+
+    mapping = [
+        ('installation-name', 'installationName', 'default'),
+        ('auto-display-name', 'autoDisplayName', False),
+        ('display-name', 'displayName', ''),
+        ('assigned-labels', 'assignedLabels', ''),
+        ('parallel-build', 'parallelBuild', False),
+        ('timeout', 'timeout', 0),
+        ('screen', 'screen', '1024x768x24'),
+        ('display-name-offset', 'displayNameOffset', 1),
+        ('additional-options', 'additionalOptions', ''),
+        ('debug', 'debug', False),
+        ('shutdown-with-build', 'shutdownWithBuild', False),
+    ]
+    convert_mapping_to_xml(xwrapper, data, mapping, fail_required=True)
 
 
 def android_emulator(registry, xml_parent, data):
@@ -1977,39 +1977,36 @@ def android_emulator(registry, xml_parent, data):
     if data.get('avd'):
         XML.SubElement(root, 'avdName').text = str(data['avd'])
 
-    if data.get('os'):
-        XML.SubElement(root, 'osVersion').text = str(data['os'])
-        XML.SubElement(root, 'screenDensity').text = str(
-            data.get('screen-density', 'mdpi'))
-        XML.SubElement(root, 'screenResolution').text = str(
-            data.get('screen-resolution', 'WVGA'))
-        XML.SubElement(root, 'deviceLocale').text = str(
-            data.get('locale', 'en_US'))
-        XML.SubElement(root, 'targetAbi').text = str(
-            data.get('target-abi', ''))
-        XML.SubElement(root, 'sdCardSize').text = str(data.get('sd-card', ''))
+    else:
+        mapping = [
+            ('os', 'osVersion', None),
+            ('screen-density', 'screenDensity', 'mdpi'),
+            ('screen-resolution', 'screenResolution', 'WVGA'),
+            ('locale', 'deviceLocale', 'en_US'),
+            ('target-abi', 'targetAbi', ''),
+            ('sd-card', 'sdCardSize', '')
+        ]
+        convert_mapping_to_xml(root, data, mapping, fail_required=True)
 
     hardware = XML.SubElement(root, 'hardwareProperties')
     for prop_name, prop_val in data.get('hardware-properties', {}).items():
         prop_node = XML.SubElement(hardware,
                                    'hudson.plugins.android__emulator'
                                    '.AndroidEmulator_-HardwareProperty')
-        XML.SubElement(prop_node, 'key').text = str(prop_name)
-        XML.SubElement(prop_node, 'value').text = str(prop_val)
-
-    XML.SubElement(root, 'wipeData').text = str(
-        data.get('wipe', False)).lower()
-    XML.SubElement(root, 'showWindow').text = str(
-        data.get('show-window', False)).lower()
-    XML.SubElement(root, 'useSnapshots').text = str(
-        data.get('snapshot', False)).lower()
-    XML.SubElement(root, 'deleteAfterBuild').text = str(
-        data.get('delete', False)).lower()
-    XML.SubElement(root, 'startupDelay').text = str(
-        data.get('startup-delay', 0))
-    XML.SubElement(root, 'commandLineOptions').text = str(
-        data.get('commandline-options', ''))
-    XML.SubElement(root, 'executable').text = str(data.get('exe', ''))
+        mapping = [
+            ('', 'key', prop_name),
+            ('', 'value', prop_val)]
+        convert_mapping_to_xml(prop_node, data, mapping, fail_required=True)
+    mapping = [
+        ('wipe', 'wipeData', False),
+        ('show-window', 'showWindow', False),
+        ('snapshot', 'useSnapshots', False),
+        ('delete', 'deleteAfterBuild', False),
+        ('startup-delay', 'startupDelay', 0),
+        ('commandline-options', 'commandLineOptions', ''),
+        ('exe', 'executable', ''),
+    ]
+    convert_mapping_to_xml(root, data, mapping, fail_required=True)
 
 
 def artifactory_maven(registry, xml_parent, data):
@@ -2341,6 +2338,59 @@ def maven_release(registry, xml_parent, data):
         ('scm-password-env-var', 'scmPasswordEnvVar', ''),
     ]
     convert_mapping_to_xml(mvn_release, data, mapping, fail_required=True)
+
+
+def version_number(parser, xml_parent, data):
+    """yaml: version-number
+    Generate a version number for the build using a format string. See the
+    wiki page for more detailed descriptions of options.
+
+    Requires the Jenkins :jenkins-wiki:`version number plugin
+    <Version+Number+Plugin>`.
+
+    :arg str variable-name: Name of environment variable to assign version
+        number to (required)
+    :arg str format-string: Format string used to generate version number
+        (required)
+    :arg bool skip-failed-builds: If the build fails, DO NOT increment any
+        auto-incrementing component of the version number (default: false)
+    :arg bool display-name: Use the version number for the build display
+        name (default: false)
+    :arg str start-date: The date the project began as a UTC timestamp
+        (default 1970-1-1 00:00:00.0 UTC)
+    :arg int builds-today: The number of builds that have been executed
+        today (optional)
+    :arg int builds-this-month: The number of builds that have been executed
+        since the start of the month (optional)
+    :arg int builds-this-year: The number of builds that have been executed
+        since the start of the year (optional)
+    :arg int builds-all-time: The number of builds that have been executed
+        since the start of the project (optional)
+
+    Example:
+
+    .. literalinclude:: /../../tests/wrappers/fixtures/version-number001.yaml
+       :language: yaml
+
+    """
+    version_number = XML.SubElement(
+        xml_parent, 'org.jvnet.hudson.tools.versionnumber.VersionNumberBuilder'
+    )
+
+    mapping = [
+        # option, xml name, default value
+        ("variable-name", 'environmentVariableName', None),
+        ("format-string", 'versionNumberString', None),
+        ("skip-failed-builds", 'skipFailedBuilds', False),
+        ("display-name", 'useAsBuildDisplayName', False),
+        ("start-date", 'projectStartDate', '1970-1-1 00:00:00.0 UTC'),
+        ("builds-today", 'oBuildsToday', '-1'),
+        ("builds-this-month", 'oBuildsThisMonth', '-1'),
+        ("builds-this-year", 'oBuildsThisYear', '-1'),
+        ("builds-all-time", 'oBuildsAllTime', '-1'),
+    ]
+
+    convert_mapping_to_xml(version_number, data, mapping, fail_required=True)
 
 
 class Wrappers(jenkins_jobs.modules.base.Base):

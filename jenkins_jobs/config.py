@@ -42,13 +42,11 @@ exclude=.*
 allow_duplicates=False
 allow_empty_variables=False
 
+# other named sections could be used in addition to the implicit [jenkins]
+# if you have multiple jenkins servers.
 [jenkins]
 url=http://localhost:8080/
 query_plugins_info=True
-
-[hipchat]
-authtoken=dummy
-send-as=Jenkins
 """
 
 CONFIG_REQUIRED_MESSAGE = ("A valid configuration file is required. "
@@ -57,7 +55,9 @@ CONFIG_REQUIRED_MESSAGE = ("A valid configuration file is required. "
 
 class JJBConfig(object):
 
-    def __init__(self, config_filename=None, config_file_required=False):
+    def __init__(self, config_filename=None,
+                 config_file_required=False,
+                 config_section='jenkins'):
 
         """
         The JJBConfig class is intended to encapsulate and resolve priority
@@ -113,8 +113,8 @@ class JJBConfig(object):
                 if config_file_required:
                     raise JJBConfigException(CONFIG_REQUIRED_MESSAGE)
                 else:
-                    logger.warn("Config file, {0}, not found. Using default "
-                                "config values.".format(conf))
+                    logger.warning("Config file, {0}, not found. Using "
+                                   "default config values.".format(conf))
 
         if config_fp is not None:
             if PY2:
@@ -128,6 +128,7 @@ class JJBConfig(object):
         self.flush_cache = False
         self.user = None
         self.password = None
+        self.section = config_section
         self.plugins_info = None
         self.timeout = builder._DEFAULT_TIMEOUT
         self.allow_empty_variables = None
@@ -135,9 +136,9 @@ class JJBConfig(object):
         self.jenkins = defaultdict(None)
         self.builder = defaultdict(None)
         self.yamlparser = defaultdict(None)
-        self.hipchat = defaultdict(None)
 
         self._setup()
+        self._handle_deprecated_hipchat_config()
 
     def _init_defaults(self):
         """ Initialize default configuration values using DEFAULT_CONF
@@ -165,18 +166,49 @@ class JJBConfig(object):
 
         return config_fp
 
+    def _handle_deprecated_hipchat_config(self):
+        config = self.config_parser
+
+        if config.has_section('hipchat'):
+            if config.has_section('plugin "hipchat"'):
+                logger.warning(
+                    "Both [hipchat] and [plugin \"hipchat\"] sections "
+                    "defined, legacy [hipchat] section will be ignored."
+                )
+            else:
+                logger.warning(
+                    "[hipchat] section is deprecated and should be moved to a "
+                    "[plugins \"hipchat\"] section instead as the [hipchat] "
+                    "section will be ignored in the future."
+                )
+                config.add_section('plugin "hipchat"')
+                for option in config.options("hipchat"):
+                    config.set('plugin "hipchat"', option,
+                               config.get("hipchat", option))
+
+                config.remove_section("hipchat")
+
+        # remove need to reference jenkins section when using hipchat plugin
+        # moving to backports configparser would allow use of extended
+        # interpolation to remove the need for plugins to need information
+        # directly from the jenkins section within code and allow variables
+        # in the config file to refer instead.
+        if (config.has_section('plugin "hipchat"') and
+                not config.has_option('plugin "hipchat"', 'url')):
+            config.set('plugin "hipchat"', "url", config.get('jenkins', 'url'))
+
     def _setup(self):
         config = self.config_parser
 
         logger.debug("Config: {0}".format(config))
 
         # check the ignore_cache setting
-        if config.has_option('jenkins', 'ignore_cache'):
-            logging.warn("ignore_cache option should be moved to the "
-                         "[job_builder] section in the config file, the "
-                         "one specified in the [jenkins] section will be "
-                         "ignored in the future")
-            self.ignore_cache = config.getboolean('jenkins', 'ignore_cache')
+        if config.has_option(self.section, 'ignore_cache'):
+            logging.warning("ignore_cache option should be moved to the "
+                            "[job_builder] section in the config file, the "
+                            "one specified in the [jenkins] section will be "
+                            "ignored in the future")
+            self.ignore_cache = config.getboolean(self.section, 'ignore_cache')
         elif config.has_option('job_builder', 'ignore_cache'):
             self.ignore_cache = config.getboolean('job_builder',
                                                   'ignore_cache')
@@ -195,12 +227,12 @@ class JJBConfig(object):
         # error
         # https://bugs.launchpad.net/openstack-ci/+bug/1259631
         try:
-            self.user = config.get('jenkins', 'user')
+            self.user = config.get(self.section, 'user')
         except (TypeError, configparser.NoOptionError):
             pass
 
         try:
-            self.password = config.get('jenkins', 'password')
+            self.password = config.get(self.section, 'password')
         except (TypeError, configparser.NoOptionError):
             pass
 
@@ -212,21 +244,22 @@ class JJBConfig(object):
         # "timeout=jenkins_jobs.builder._DEFAULT_TIMEOUT" or not set timeout at
         # all.
         try:
-            self.timeout = config.getfloat('jenkins', 'timeout')
+            self.timeout = config.getfloat(self.section, 'timeout')
         except (ValueError):
             raise JenkinsJobsException("Jenkins timeout config is invalid")
         except (TypeError, configparser.NoOptionError):
             pass
 
-        if not config.getboolean("jenkins", "query_plugins_info"):
-            logger.debug("Skipping plugin info retrieval")
-            self.plugins_info = []
+        if (config.has_option(self.section, 'query_plugins_info') and
+           not config.getboolean(self.section, "query_plugins_info")):
+                logger.debug("Skipping plugin info retrieval")
+                self.plugins_info = []
 
         self.recursive = config.getboolean('job_builder', 'recursive')
         self.excludes = config.get('job_builder', 'exclude').split(os.pathsep)
 
         # The way we want to do things moving forward:
-        self.jenkins['url'] = config.get('jenkins', 'url')
+        self.jenkins['url'] = config.get(self.section, 'url')
         self.jenkins['user'] = self.user
         self.jenkins['password'] = self.password
         self.jenkins['timeout'] = self.timeout
@@ -310,3 +343,18 @@ class JJBConfig(object):
                            " the " + section + " section, blank default" +
                            " value will be applied:\n{0}".format(e))
         return result
+
+    def get_plugin_config(self, plugin, key):
+        value = self.get_module_config('plugin "{}"'.format(plugin), key)
+
+        # Backwards compatibility for users who have not switched to the new
+        # plugin configuration format in their config. This code should be
+        # removed in future versions of JJB after 2.0.
+        if not value:
+            value = self.get_module_config(plugin, key)
+            logger.warning(
+                "Defining plugin configuration using [" + plugin + "] is"
+                " deprecated. The recommended way to define plugins now is by"
+                " configuring [plugin \"" + plugin + "\"]")
+
+        return value

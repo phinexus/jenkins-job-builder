@@ -6,22 +6,9 @@
         <hudson.plugins.plot.Plot>
           <title>Sample graph</title>
           <yaxis/>
+          <width>750</width>
+          <height>450</height>
           <csvFileName>persisted.csv</csvFileName>
-          <series>
-            <hudson.plugins.plot.CSVSeries>
-              <file>data.csv</file>
-              <inclusionFlag>INCLUDE_BY_STRING</inclusionFlag>
-              <exclusionValues>Column 1,Column 2,Column 3</exclusionValues>
-              <strExclusionSet>
-                <string>Column 1</string>
-                <string>Column 2</string>
-                <string>Column 3</string>
-              </strExclusionSet>
-              <url/>
-              <displayTableFlag>false</displayTableFlag>
-              <fileType>csv</fileType>
-            </hudson.plugins.plot.CSVSeries>
-          </series>
           <group>bench</group>
           <useDescr>false</useDescr>
           <exclZero>false</exclZero>
@@ -29,6 +16,21 @@
           <keepRecords>false</keepRecords>
           <numBuilds/>
           <style>line</style>
+          <series>
+            <hudson.plugins.plot.CSVSeries>
+              <file>data.csv</file>
+              <inclusionFlag>INCLUDE_BY_STRING</inclusionFlag>
+              <exclusionValues>Column 1,Column 2,Column 3</exclusionValues>
+              <url/>
+              <displayTableFlag>false</displayTableFlag>
+              <strExclusionSet>
+                <string>Column 1</string>
+                <string>Column 2</string>
+                <string>Column 3</string>
+              </strExclusionSet>
+              <fileType>csv</fileType>
+            </hudson.plugins.plot.CSVSeries>
+          </series>
         </hudson.plugins.plot.Plot>
       </plots>
     </hudson.plugins.plot.PlotPublisher>

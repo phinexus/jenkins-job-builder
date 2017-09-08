@@ -21,6 +21,7 @@ import re
 from string import Formatter
 
 from jenkins_jobs.errors import JenkinsJobsException
+from jenkins_jobs.local_yaml import CustomLoader
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +75,12 @@ def deep_format(obj, paramdict, allow_empty=False):
             desc = "%s parameter missing to format %s\nGiven:\n%s" % (
                 missing_key, obj, pformat(paramdict))
             raise JenkinsJobsException(desc)
+        except Exception:
+            logging.error("Problem formatting with args:\nallow_empty:"
+                          "%s\nobj: %s\nparamdict: %s" %
+                          (allow_empty, obj, paramdict))
+            raise
+
     elif isinstance(obj, list):
         ret = type(obj)()
         for item in obj:
@@ -89,8 +96,17 @@ def deep_format(obj, paramdict, allow_empty=False):
                 desc = "%s parameter missing to format %s\nGiven:\n%s" % (
                     missing_key, obj, pformat(paramdict))
                 raise JenkinsJobsException(desc)
+            except Exception:
+                logging.error("Problem formatting with args:\nallow_empty:"
+                              "%s\nobj: %s\nparamdict: %s" %
+                              (allow_empty, obj, paramdict))
+                raise
     else:
         ret = obj
+    if isinstance(ret, CustomLoader):
+        # If we have a CustomLoader here, we've lazily-loaded a template;
+        # attempt to format it.
+        ret = deep_format(ret, paramdict, allow_empty=allow_empty)
     return ret
 
 
@@ -99,9 +115,42 @@ class CustomFormatter(Formatter):
     Custom formatter to allow non-existing key references when formatting a
     string
     """
+    _expr = '{({{)*(?:obj:)?(?P<key>\w+)(?:\|(?P<default>[\w\s]*))?}(}})*'
+
     def __init__(self, allow_empty=False):
         super(CustomFormatter, self).__init__()
         self.allow_empty = allow_empty
+
+    def vformat(self, format_string, args, kwargs):
+        matcher = re.compile(self._expr)
+
+        # special case of returning the object if the entire string
+        # matches a single parameter
+        try:
+            result = re.match('^%s$' % self._expr, format_string)
+        except TypeError:
+            return format_string.format(**kwargs)
+        if result is not None:
+            try:
+                return kwargs[result.group("key")]
+            except KeyError:
+                pass
+
+        # handle multiple fields within string via a callback to re.sub()
+        def re_replace(match):
+            key = match.group("key")
+            default = match.group("default")
+
+            if default is not None:
+                if key not in kwargs:
+                    return default
+                else:
+                    return "{%s}" % key
+            return match.group(0)
+
+        format_string = matcher.sub(re_replace, format_string)
+
+        return Formatter.vformat(self, format_string, args, kwargs)
 
     def get_value(self, key, args, kwargs):
         try:

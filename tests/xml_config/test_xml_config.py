@@ -34,10 +34,24 @@ class TestXmlJobGeneratorExceptions(base.BaseTestCase):
                               "invalid_project.yaml"))
 
         reg = registry.ModuleRegistry(config)
-        job_data = yp.expandYaml(reg)
+        job_data, _ = yp.expandYaml(reg)
 
         # Generate the XML tree
         xml_generator = xml_config.XmlJobGenerator(reg)
         e = self.assertRaises(errors.JenkinsJobsException,
                               xml_generator.generateXML, job_data)
         self.assertIn("Unrecognized project type:", str(e))
+
+    def test_incorrect_template_params(self):
+        self.conf_filename = None
+        config = self._get_config()
+
+        yp = parser.YamlParser(config)
+        yp.parse(os.path.join(self.fixtures_path,
+                              "failure_formatting_component.yaml"))
+
+        reg = registry.ModuleRegistry(config)
+        reg.set_parser_data(yp.data)
+
+        self.assertRaises(errors.JenkinsJobsException, yp.expandYaml, reg)
+        self.assertIn("Problem formatting with args", self.logger.output)

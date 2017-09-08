@@ -38,6 +38,7 @@ import xml.etree.ElementTree as XML
 from jenkins_jobs.errors import InvalidAttributeError
 from jenkins_jobs.errors import JenkinsJobsException
 from jenkins_jobs.errors import MissingAttributeError
+from jenkins_jobs.errors import AttributeConflictError
 import jenkins_jobs.modules.base
 import jenkins_jobs.modules.helpers as helpers
 
@@ -62,10 +63,12 @@ def builds_chain_fingerprinter(registry, xml_parent, data):
                                    'org.jenkinsci.plugins.'
                                    'buildschainfingerprinter.'
                                    'AutomaticFingerprintJobProperty')
-    XML.SubElement(fingerprinter, 'isPerBuildsChainEnabled').text = str(
-        data.get('per-builds-chain', False)).lower()
-    XML.SubElement(fingerprinter, 'isPerJobsChainEnabled').text = str(
-        data.get('per-job-chain', False)).lower()
+    mapping = [
+        ('per-builds-chain', 'isPerBuildsChainEnabled', False),
+        ('per-job-chain', 'isPerJobsChainEnabled', False),
+    ]
+    helpers.convert_mapping_to_xml(
+        fingerprinter, data, mapping, fail_required=True)
 
 
 def ownership(registry, xml_parent, data):
@@ -121,24 +124,64 @@ def promoted_build(registry, xml_parent, data):
             XML.SubElement(active_processes, 'string').text = str(n)
 
 
+def gitbucket(parser, xml_parent, data):
+    """yaml: gitbucket
+    Integrate GitBucket to Jenkins.
+    Requires the Jenkins :jenkins-wiki:`GitBucket Plugin <GitBucket+Plugin>`.
+
+    :arg str url: GitBucket URL to issue (required)
+    :arg bool link-enabled: Enable hyperlink to issue (default false)
+
+    Minimal Example:
+
+    .. literalinclude:: /../../tests/properties/fixtures/gitbucket-minimal.yaml
+       :language: yaml
+
+    Full Example:
+
+    .. literalinclude:: /../../tests/properties/fixtures/gitbucket-full.yaml
+       :language: yaml
+    """
+    gitbucket = XML.SubElement(
+        xml_parent, 'org.jenkinsci.plugins.gitbucket.GitBucketProjectProperty')
+    gitbucket.set('plugin', 'gitbucket')
+
+    mapping = [
+        ('url', 'url', None),
+        ('link-enabled', 'linkEnabled', False),
+    ]
+    helpers.convert_mapping_to_xml(
+        gitbucket, data, mapping, fail_required=True)
+
+
 def github(registry, xml_parent, data):
     """yaml: github
     Sets the GitHub URL for the project.
 
     :arg str url: the GitHub URL (required)
+    :arg str display-name: This value will be used as context name for commit
+        status if status builder or status publisher is defined for this
+        project. (>= 1.14.1) (default '')
 
-    Example:
+    Minimal Example:
 
-    .. literalinclude:: /../../tests/properties/fixtures/github.yaml
+    .. literalinclude:: /../../tests/properties/fixtures/github-minimal.yaml
+       :language: yaml
+
+    Full Example:
+
+    .. literalinclude:: /../../tests/properties/fixtures/github-full.yaml
        :language: yaml
     """
-    github = XML.SubElement(xml_parent,
-                            'com.coravy.hudson.plugins.github.'
-                            'GithubProjectProperty')
-    try:
-        XML.SubElement(github, 'projectUrl').text = data['url']
-    except KeyError as e:
-        raise MissingAttributeError(e)
+    github = XML.SubElement(
+        xml_parent, 'com.coravy.hudson.plugins.github.GithubProjectProperty')
+    github.set('plugin', 'github')
+
+    mapping = [
+        ('url', 'projectUrl', None),
+        ('display-name', 'displayName', ''),
+    ]
+    helpers.convert_mapping_to_xml(github, data, mapping, fail_required=True)
 
 
 def gitlab(registry, xml_parent, data):
@@ -157,10 +200,10 @@ def gitlab(registry, xml_parent, data):
     gitlab = XML.SubElement(xml_parent,
                             'com.dabsquared.gitlabjenkins.connection.'
                             'GitLabConnectionProperty')
-    try:
-        XML.SubElement(gitlab, 'gitLabConnection').text = data['connection']
-    except KeyError as e:
-        raise MissingAttributeError(e)
+    mapping = [
+        ('connection', 'gitLabConnection', None)
+    ]
+    helpers.convert_mapping_to_xml(gitlab, data, mapping, fail_required=True)
 
 
 def least_load(registry, xml_parent, data):
@@ -178,9 +221,9 @@ def least_load(registry, xml_parent, data):
     least = XML.SubElement(xml_parent,
                            'org.bstick12.jenkinsci.plugins.leastload.'
                            'LeastLoadDisabledProperty')
-
-    XML.SubElement(least, 'leastLoadDisabled').text = str(
-        data.get('disabled', True)).lower()
+    mapping = [
+        ('disabled', 'leastLoadDisabled', True)]
+    helpers.convert_mapping_to_xml(least, data, mapping, fail_required=True)
 
 
 def throttle(registry, xml_parent, data):
@@ -206,14 +249,12 @@ def throttle(registry, xml_parent, data):
     throttle = XML.SubElement(xml_parent,
                               'hudson.plugins.throttleconcurrents.'
                               'ThrottleJobProperty')
-    XML.SubElement(throttle, 'maxConcurrentPerNode').text = str(
-        data.get('max-per-node', '0'))
-    XML.SubElement(throttle, 'maxConcurrentTotal').text = str(
-        data.get('max-total', '0'))
-    # TODO: What's "categories"?
-    # XML.SubElement(throttle, 'categories')
-    XML.SubElement(throttle, 'throttleEnabled').text = str(
-        data.get('enabled', True)).lower()
+    mapping = [
+        ('max-per-node', 'maxConcurrentPerNode', '0'),
+        ('max-total', 'maxConcurrentTotal', '0'),
+        ('enabled', 'throttleEnabled', True),
+    ]
+    helpers.convert_mapping_to_xml(throttle, data, mapping, fail_required=True)
     cat = data.get('categories', [])
     if cat:
         cn = XML.SubElement(throttle, 'categories')
@@ -224,15 +265,19 @@ def throttle(registry, xml_parent, data):
     option = data.get('option')
     if option not in options_list:
         raise InvalidAttributeError('option', option, options_list)
-
-    XML.SubElement(throttle, 'throttleOption').text = option
-    XML.SubElement(throttle, 'configVersion').text = '1'
+    mapping = [
+        ('', 'throttleOption', option),
+        ('', 'configVersion', '1'),
+    ]
+    helpers.convert_mapping_to_xml(throttle, data, mapping, fail_required=True)
 
     matrixopt = XML.SubElement(throttle, 'matrixOptions')
-    XML.SubElement(matrixopt, 'throttleMatrixBuilds').text = str(
-        data.get('matrix-builds', True)).lower()
-    XML.SubElement(matrixopt, 'throttleMatrixConfigurations').text = str(
-        data.get('matrix-configs', False)).lower()
+    mapping = [
+        ('matrix-builds', 'throttleMatrixBuilds', True),
+        ('matrix-configs', 'throttleMatrixConfigurations', False)
+    ]
+    helpers.convert_mapping_to_xml(
+        matrixopt, data, mapping, fail_required=True)
 
 
 def sidebar(registry, xml_parent, data):
@@ -258,9 +303,12 @@ def sidebar(registry, xml_parent, data):
     else:
         links = sidebar.find('links')
     action = XML.SubElement(links, 'hudson.plugins.sidebar__link.LinkAction')
-    XML.SubElement(action, 'url').text = str(data.get('url', ''))
-    XML.SubElement(action, 'text').text = str(data.get('text', ''))
-    XML.SubElement(action, 'icon').text = str(data.get('icon', ''))
+    mapping = [
+        ('url', 'url', ''),
+        ('text', 'text', ''),
+        ('icon', 'icon', ''),
+    ]
+    helpers.convert_mapping_to_xml(action, data, mapping, fail_required=True)
 
 
 def inject(registry, xml_parent, data):
@@ -290,27 +338,23 @@ def inject(registry, xml_parent, data):
                             'EnvInjectJobProperty')
     info = XML.SubElement(inject, 'info')
 
-    jenkins_jobs.modules.base.add_nonblank_xml_subelement(
-        info, 'propertiesFilePath', data.get('properties-file'))
-    jenkins_jobs.modules.base.add_nonblank_xml_subelement(
-        info, 'propertiesContent', data.get('properties-content'))
-    jenkins_jobs.modules.base.add_nonblank_xml_subelement(
-        info, 'scriptFilePath', data.get('script-file'))
-    jenkins_jobs.modules.base.add_nonblank_xml_subelement(
-        info, 'scriptContent', data.get('script-content'))
-    jenkins_jobs.modules.base.add_nonblank_xml_subelement(
-        info, 'groovyScriptContent', data.get('groovy-content'))
+    mapping = [
+        ('properties-file', 'propertiesFilePath', None),
+        ('properties-content', 'propertiesContent', None),
+        ('script-file', 'scriptFilePath', None),
+        ('script-content', 'scriptContent', None),
+        ('groovy-content', 'groovyScriptContent', None),
+        ('load-from-master', 'loadFilesFromMaster', False),
+    ]
+    helpers.convert_mapping_to_xml(info, data, mapping, fail_required=False)
 
-    XML.SubElement(info, 'loadFilesFromMaster').text = str(
-        data.get('load-from-master', False)).lower()
-    XML.SubElement(inject, 'on').text = str(
-        data.get('enabled', True)).lower()
-    XML.SubElement(inject, 'keepJenkinsSystemVariables').text = str(
-        data.get('keep-system-variables', True)).lower()
-    XML.SubElement(inject, 'keepBuildVariables').text = str(
-        data.get('keep-build-variables', True)).lower()
-    XML.SubElement(inject, 'overrideBuildParameters').text = str(
-        data.get('override-build-parameters', False)).lower()
+    mapping = [
+        ('enabled', 'on', True),
+        ('keep-system-variables', 'keepJenkinsSystemVariables', True),
+        ('keep-build-variables', 'keepBuildVariables', True),
+        ('override-build-parameters', 'overrideBuildParameters', False),
+    ]
+    helpers.convert_mapping_to_xml(inject, data, mapping, fail_required=True)
 
 
 def authenticated_build(registry, xml_parent, data):
@@ -426,11 +470,9 @@ def priority_sorter(registry, xml_parent, data):
     priority_sorter_tag = XML.SubElement(xml_parent,
                                          'hudson.queueSorter.'
                                          'PrioritySorterJobProperty')
-    try:
-        XML.SubElement(priority_sorter_tag, 'priority').text = str(
-            data['priority'])
-    except KeyError as e:
-        raise MissingAttributeError(e)
+    mapping = [('priority', 'priority', None)]
+    helpers.convert_mapping_to_xml(
+        priority_sorter_tag, data, mapping, fail_required=True)
 
 
 def build_blocker(registry, xml_parent, data):
@@ -549,8 +591,12 @@ def batch_tasks(registry, xml_parent, data):
     for task in data:
         batch_task = XML.SubElement(tasks,
                                     'hudson.plugins.batch__task.BatchTask')
-        XML.SubElement(batch_task, 'name').text = task['name']
-        XML.SubElement(batch_task, 'script').text = task['script']
+        mapping = [
+            ('name', 'name', None),
+            ('script', 'script', None),
+        ]
+        helpers.convert_mapping_to_xml(
+            batch_task, task, mapping, fail_required=True)
 
 
 def heavy_job(registry, xml_parent, data):
@@ -572,8 +618,8 @@ def heavy_job(registry, xml_parent, data):
     heavyjob = XML.SubElement(xml_parent,
                               'hudson.plugins.'
                               'heavy__job.HeavyJobProperty')
-    XML.SubElement(heavyjob, 'weight').text = str(
-        data.get('weight', 1))
+    mapping = [('weight', 'weight', 1)]
+    helpers.convert_mapping_to_xml(heavyjob, data, mapping, fail_required=True)
 
 
 def slave_utilization(registry, xml_parent, data):
@@ -598,13 +644,16 @@ def slave_utilization(registry, xml_parent, data):
     """
     utilization = XML.SubElement(
         xml_parent, 'com.suryagaddipati.jenkins.SlaveUtilizationProperty')
+
     percent = int(data.get('slave-percentage', 0))
-    XML.SubElement(utilization, 'needsExclusiveAccessToNode'
-                   ).text = 'true' if percent else 'false'
-    XML.SubElement(utilization, 'slaveUtilizationPercentage'
-                   ).text = str(percent)
-    XML.SubElement(utilization, 'singleInstancePerSlave').text = str(
-        data.get('single-instance-per-slave', False)).lower()
+    exclusive_node_access = True if percent else False
+
+    mapping = [
+        ('', 'needsExclusiveAccessToNode', exclusive_node_access),
+        ('', 'slaveUtilizationPercentage', percent),
+        ('single-instance-per-slave', 'singleInstancePerSlave', False)]
+    helpers.convert_mapping_to_xml(
+        utilization, data, mapping, fail_required=True)
 
 
 def delivery_pipeline(registry, xml_parent, data):
@@ -660,7 +709,9 @@ def zeromq_event(registry, xml_parent, data):
     zmq_event = XML.SubElement(xml_parent,
                                'org.jenkinsci.plugins.'
                                'ZMQEventPublisher.HudsonNotificationProperty')
-    XML.SubElement(zmq_event, 'enabled').text = 'true'
+    mapping = [('', 'enabled', True)]
+    helpers.convert_mapping_to_xml(
+        zmq_event, data, mapping, fail_required=True)
 
 
 def slack(registry, xml_parent, data):
@@ -683,7 +734,7 @@ def slack(registry, xml_parent, data):
         (default false)
     :arg bool notify-failure: Send notification when job fails.
         (default false)
-    :arg bool notifiy-back-to-normal: Send notification when job is
+    :arg bool notify-back-to-normal: Send notification when job is
         succeeding again after being unstable or failed. (default false)
     :arg bool 'notify-repeated-failure': Send notification when job is
         still failing after last failure. (default false)
@@ -701,18 +752,13 @@ def slack(registry, xml_parent, data):
         /../../tests/properties/fixtures/slack001.yaml
         :language: yaml
     """
-    def _add_xml(elem, name, value):
-        if isinstance(value, bool):
-            value = str(value).lower()
-        XML.SubElement(elem, name).text = value
-
     logger = logging.getLogger(__name__)
 
     plugin_info = registry.get_plugin_info('Slack Notification Plugin')
     plugin_ver = pkg_resources.parse_version(plugin_info.get('version', "0"))
 
     if plugin_ver >= pkg_resources.parse_version("2.0"):
-        logger.warn(
+        logger.warning(
             "properties section is not used with plugin version >= 2.0",
         )
 
@@ -742,33 +788,41 @@ def slack(registry, xml_parent, data):
         if not data.get('custom-message', ''):
             raise MissingAttributeError('custom-message')
 
-    for yaml_name, xml_name, default_value in mapping:
-        _add_xml(slack, xml_name, data.get(yaml_name, default_value))
+    helpers.convert_mapping_to_xml(slack, data, mapping, fail_required=True)
 
 
 def rebuild(registry, xml_parent, data):
     """yaml: rebuild
-    Requires the Jenkins :jenkins-wiki:`Rebuild Plugin
-    <Rebuild+Plugin>`.
+    This plug-in allows the user to rebuild a parameterized build without
+    entering the parameters again.It will also allow the user to edit the
+    parameters before rebuilding.
+    Requires the Jenkins :jenkins-wiki:`Rebuild Plugin <Rebuild+Plugin>`.
 
     :arg bool auto-rebuild: Rebuild without asking for parameters
         (default false)
     :arg bool rebuild-disabled: Disable rebuilding for this job
         (default false)
 
-    Example:
+    Minimal Example:
 
-    .. literalinclude::
-        /../../tests/properties/fixtures/rebuild.yaml
+    .. literalinclude:: /../../tests/properties/fixtures/rebuild-minimal.yaml
+       :language: yaml
+
+    Full Example:
+
+    .. literalinclude:: /../../tests/properties/fixtures/rebuild-full.yaml
        :language: yaml
     """
     sub_element = XML.SubElement(xml_parent,
                                  'com.sonyericsson.rebuild.RebuildSettings')
+    sub_element.set('plugin', 'rebuild')
 
-    XML.SubElement(sub_element, 'autoRebuild').text = str(
-        data.get('auto-rebuild', False)).lower()
-    XML.SubElement(sub_element, 'rebuildDisabled').text = str(
-        data.get('rebuild-disabled', False)).lower()
+    mapping = [
+        ('auto-rebuild', 'autoRebuild', False),
+        ('rebuild-disabled', 'rebuildDisabled', False),
+    ]
+    helpers.convert_mapping_to_xml(
+        sub_element, data, mapping, fail_required=True)
 
 
 def build_discarder(registry, xml_parent, data):
@@ -795,14 +849,197 @@ def build_discarder(registry, xml_parent, data):
                               'jenkins.model.BuildDiscarderProperty')
     strategy = XML.SubElement(base_sub, 'strategy')
     strategy.set('class', 'hudson.tasks.LogRotator')
-    days = XML.SubElement(strategy, 'daysToKeep')
-    days.text = str(data.get('days-to-keep', -1))
-    num = XML.SubElement(strategy, 'numToKeep')
-    num.text = str(data.get('num-to-keep', -1))
-    adays = XML.SubElement(strategy, 'artifactDaysToKeep')
-    adays.text = str(data.get('artifact-days-to-keep', -1))
-    anum = XML.SubElement(strategy, 'artifactNumToKeep')
-    anum.text = str(data.get('artifact-num-to-keep', -1))
+
+    mappings = [
+        ('days-to-keep', 'daysToKeep', -1),
+        ('num-to-keep', 'numToKeep', -1),
+        ('artifact-days-to-keep', 'artifactDaysToKeep', -1),
+        ('artifact-num-to-keep', 'artifactNumToKeep', -1),
+    ]
+    helpers.convert_mapping_to_xml(
+        strategy, data, mappings, fail_required=True)
+
+
+def slave_prerequisites(registry, xml_parent, data):
+    """yaml: slave-prerequisites
+    This plugin allows to check prerequisites on slave before
+    a job can run a build on it
+
+    Requires the Jenkins :jenkins-wiki:`Slave Prerequisites Plugin
+    <Slave+Prerequisites+Plugin>`.
+
+    :arg str script: A script to be executed on slave node.
+        If returning non 0 status, the node will be vetoed from hosting
+        the build. (required)
+    :arg str interpreter: Command line interpreter to be used for executing
+        the prerequisite script - either `shell` for Unix shell or `cmd` for
+        Windows batch script. (default shell)
+
+    Example:
+
+    .. literalinclude::
+        /../../tests/properties/fixtures/slave-prerequisites-minimal.yaml
+       :language: yaml
+
+    .. literalinclude::
+        /../../tests/properties/fixtures/slave-prerequisites-full.yaml
+       :language: yaml
+    """
+    prereqs = XML.SubElement(xml_parent,
+                             'com.cloudbees.plugins.JobPrerequisites')
+
+    mappings = [
+        ('script', 'script', None),
+        ('interpreter', 'interpreter', 'shell', {
+            'cmd': 'windows batch command',
+            'shell': 'shell script'}),
+    ]
+    helpers.convert_mapping_to_xml(
+        prereqs, data, mappings, fail_required=True)
+
+
+def groovy_label(registry, xml_parent, data):
+    """yaml: groovy-label
+    This plugin allows to use Groovy script to restrict where this project
+    can be run.
+
+    Requires the Jenkins :jenkins-wiki:`Groovy Label Assignment Plugin
+    <Groovy+Label+Assignment+plugin>`.
+
+    Return value from Groovy script is treated as Label Expression.
+    It is treated as followings:
+
+    - A non-string value will be converted to a string using toString()
+    - When null or blank string is returned, node restriction does not take
+      effect (or is not overwritten).
+    - When exception occurred or Label Expression is not parsed correctly,
+      builds are canceled.
+
+    :arg str script: Groovy script (default '')
+    :arg bool sandbox: Use Groovy Sandbox. (default false)
+        If checked, run this Groovy script in a sandbox with limited abilities.
+        If unchecked, and you are not a Jenkins administrator, you will need to
+        wait for an administrator to approve the script
+    :arg list classpath: Additional classpath entries accessible from
+        the script, each of which should be an absolute local path or
+        URL to a JAR file, according to "The file URI Scheme" (optional)
+
+    Minimal Example:
+
+    .. literalinclude::
+        /../../tests/properties/fixtures/groovy-label-minimal.yaml
+       :language: yaml
+
+    Full Example:
+
+    .. literalinclude::
+        /../../tests/properties/fixtures/groovy-label-full.yaml
+       :language: yaml
+    """
+    sub_element = XML.SubElement(xml_parent,
+                                 'jp.ikedam.jenkins.plugins.'
+                                 'groovy__label__assignment.'
+                                 'GroovyLabelAssignmentProperty')
+    sub_element.set('plugin', 'groovy-label-assignment')
+    security = XML.SubElement(sub_element, 'secureGroovyScript')
+    security.set('plugin', 'script-security')
+    mapping = [
+        ('script', 'script', ''),
+        ('sandbox', 'sandbox', False),
+    ]
+
+    helpers.convert_mapping_to_xml(
+        security, data, mapping, fail_required=True)
+    if data and 'classpath' in data:
+        classpath = XML.SubElement(security, 'classpath')
+        for value in data['classpath']:
+            entry = XML.SubElement(classpath, 'entry')
+            XML.SubElement(entry, 'url').text = value
+
+
+def lockable_resources(registry, xml_parent, data):
+    """yaml: lockable-resources
+    Requires the Jenkins :jenkins-wiki:`Lockable Resources Plugin
+    <Lockable+Resources+Plugin>`.
+
+    :arg str resources: List of required resources, space separated.
+        (required, mutual exclusive with label)
+    :arg str label: If you have created a pool of resources, i.e. a label,
+        you can take it into use here. The build will select the resource(s)
+        from the pool that includes all resources sharing the given label.
+        (required, mutual exclusive with resources)
+    :arg str var-name: Name for the Jenkins variable to store the reserved
+        resources in. Leave empty to disable. (default '')
+    :arg int number: Number of resources to request, empty value or 0 means
+        all. This is useful, if you have a pool of similar resources,
+        from which you want one or more to be reserved. (default 0)
+
+    Example:
+
+    .. literalinclude::
+        /../../tests/properties/fixtures/lockable_resources_minimal.yaml
+       :language: yaml
+
+    .. literalinclude::
+        /../../tests/properties/fixtures/lockable_resources_label.yaml
+       :language: yaml
+
+    .. literalinclude::
+        /../../tests/properties/fixtures/lockable_resources_full.yaml
+       :language: yaml
+    """
+    lockable_resources = XML.SubElement(
+        xml_parent,
+        'org.jenkins.plugins.lockableresources.RequiredResourcesProperty')
+    if data.get('resources') and data.get('label'):
+        raise AttributeConflictError('resources', ('label',))
+    mapping = [
+        ('resources', 'resourceNames', ''),
+        ('var-name', 'resourceNamesVar', ''),
+        ('number', 'resourceNumber', 0),
+        ('label', 'labelName', ''),
+    ]
+    helpers.convert_mapping_to_xml(
+        lockable_resources, data, mapping, fail_required=True)
+
+
+def docker_container(registry, xml_parent, data):
+    """yaml: docker-container
+    Requires the Jenkins: :jenkins-wiki:`Docker Plugin<Docker+Plugin>`.
+
+    :arg bool commit-on-success: When a job completes, the docker slave
+        instance is committed with repository based on the job name and build
+        number as tag. (default false)
+    :arg str additional-tag: Additional tag to apply to the docker slave
+        instance when committing it. (default '')
+    :arg bool push-on-success: Also push the resulting image when committing
+        the docker slave instance. (default false)
+    :arg bool clean-local-images: Clean images from the local daemon after
+        building. (default true)
+
+    Minimal Example:
+
+    .. literalinclude::
+        /../../tests/properties/fixtures/docker-container-minimal.yaml
+        :language: yaml
+
+    Full Example:
+
+    .. literalinclude::
+        /../../tests/properties/fixtures/docker-container-full.yaml
+        :language: yaml
+    """
+    xml_docker = XML.SubElement(
+        xml_parent, 'com.nirima.jenkins.plugins.docker.DockerJobProperty')
+
+    mapping = [
+        ('commit-on-success', 'tagOnCompletion', False),
+        ('additional-tag', 'additionalTag', ''),
+        ('push-on-success', 'pushOnSuccess', False),
+        ('clean-local-images', 'cleanImages', True)
+    ]
+    helpers.convert_mapping_to_xml(
+        xml_docker, data, mapping, fail_required=True)
 
 
 class Properties(jenkins_jobs.modules.base.Base):

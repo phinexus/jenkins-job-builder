@@ -25,6 +25,7 @@ import os
 from jenkins_jobs.constants import MAGIC_MANAGE_STRING
 from jenkins_jobs.errors import JenkinsJobsException
 from jenkins_jobs.formatter import deep_format
+from jenkins_jobs.registry import MacroRegistry
 import jenkins_jobs.local_yaml as local_yaml
 from jenkins_jobs import utils
 
@@ -75,10 +76,13 @@ class YamlParser(object):
     def __init__(self, jjb_config=None):
         self.data = {}
         self.jobs = []
+        self.views = []
 
         self.jjb_config = jjb_config
         self.keep_desc = jjb_config.yamlparser['keep_descriptions']
         self.path = jjb_config.yamlparser['include_path']
+
+        self._macro_registry = MacroRegistry()
 
     def load_files(self, fn):
 
@@ -153,12 +157,12 @@ class YamlParser(object):
                                                "named '{0}'. Missing indent?"
                                                .format(n))
                 # allow any entry to specify an id that can also be used
-                id = dfn.get('id', dfn['name'])
-                if id in group:
+                _id = dfn.get('id', dfn['name'])
+                if _id in group:
                     self._handle_dups(
                         "Duplicate entry found in '{0}: '{1}' already "
-                        "defined".format(fp.name, id))
-                group[id] = dfn
+                        "defined".format(fp.name, _id))
+                group[_id] = dfn
                 self.data[cls] = group
 
     def parse(self, fn):
@@ -263,6 +267,11 @@ class YamlParser(object):
             job["description"] = description + \
                 self._get_managed_string().lstrip()
 
+    def _register_macros(self):
+        for component_type in self._macro_registry.component_types:
+            for macro in self.data.get(component_type, {}).values():
+                self._macro_registry.register(component_type, macro)
+
     def expandYaml(self, registry, jobs_glob=None):
         changed = True
         while changed:
@@ -272,7 +281,11 @@ class YamlParser(object):
                     if module.handle_data(self.data):
                         changed = True
 
+        self._register_macros()
+        for default in self.data.get('defaults', {}).values():
+            self._macro_registry.expand_macros(default)
         for job in self.data.get('job', {}).values():
+            self._macro_registry.expand_macros(job)
             if jobs_glob and not matches(job['name'], jobs_glob):
                 logger.debug("Ignoring job {0}".format(job['name']))
                 continue
@@ -280,6 +293,12 @@ class YamlParser(object):
             job = self._applyDefaults(job)
             self._formatDescription(job)
             self.jobs.append(job)
+
+        for view in self.data.get('view', {}).values():
+            logger.debug("Expanding view '{0}'".format(view['name']))
+            self._formatDescription(view)
+            self.views.append(view)
+
         for project in self.data.get('project', {}).values():
             logger.debug("Expanding project '{0}'".format(project['name']))
             # use a set to check for duplicate job references in projects
@@ -326,8 +345,7 @@ class YamlParser(object):
                             continue
                         template = self._getJobTemplate(group_jobname)
                         # Allow a group to override parameters set by a project
-                        d = {}
-                        d.update(project)
+                        d = type(project)(project)
                         d.update(jobparams)
                         d.update(group)
                         d.update(group_jobparams)
@@ -340,8 +358,7 @@ class YamlParser(object):
                 # see if it's a template
                 template = self._getJobTemplate(jobname)
                 if template:
-                    d = {}
-                    d.update(project)
+                    d = type(project)(project)
                     d.update(jobparams)
                     self._expandYamlForTemplateJob(d, template, jobs_glob)
                 else:
@@ -357,7 +374,7 @@ class YamlParser(object):
                                   "specified".format(job['name']))
                 self.jobs.remove(job)
             seen.add(job['name'])
-        return self.jobs
+        return self.jobs, self.views
 
     def _expandYamlForTemplateJob(self, project, template, jobs_glob=None):
         dimensions = []
@@ -381,17 +398,37 @@ class YamlParser(object):
             params = copy.deepcopy(project)
             params = self._applyDefaults(params, template)
 
-            expanded_values = {}
-            for (k, v) in values:
-                if isinstance(v, dict):
-                    inner_key = next(iter(v))
-                    expanded_values[k] = inner_key
-                    expanded_values.update(v[inner_key])
-                else:
-                    expanded_values[k] = v
+            try:
+                expanded_values = {}
+                for (k, v) in values:
+                    if isinstance(v, dict):
+                        inner_key = next(iter(v))
+                        expanded_values[k] = inner_key
+                        expanded_values.update(v[inner_key])
+                    else:
+                        expanded_values[k] = v
+            except TypeError:
+                project_name = project.pop('name')
+                logger.error(
+                    "Exception thrown while expanding template '%s' for "
+                    "project '%s', with expansion arguments of:\n%s\n"
+                    "Original project input variables for template:\n%s\n"
+                    "Most likely the inputs have items indented incorrectly "
+                    "to describe how they should be applied.\n\nNote yaml "
+                    "'null' is mapped to python's 'None'", template_name,
+                    project_name,
+                    "".join(local_yaml.dump({k: v}, default_flow_style=False)
+                            for (k, v) in values),
+                    local_yaml.dump(project, default_flow_style=False))
+                raise
 
             params.update(expanded_values)
-            params = deep_format(params, params)
+            try:
+                params = deep_format(params, params)
+            except Exception:
+                logging.error(
+                    "Failure formatting params '%s' with itself", params)
+                raise
             if combination_matches(params, excludes):
                 logger.debug('Excluding combination %s', str(params))
                 continue
@@ -401,10 +438,17 @@ class YamlParser(object):
                     params[key] = template[key]
 
             params['template-name'] = template_name
-            expanded = deep_format(
-                template, params,
-                self.jjb_config.yamlparser['allow_empty_variables'])
+            try:
+                expanded = deep_format(
+                    template, params,
+                    self.jjb_config.yamlparser['allow_empty_variables'])
+            except Exception:
+                logging.error(
+                    "Failure formatting template '%s', containing '%s' with "
+                    "params '%s'", template_name, template, params)
+                raise
 
+            self._macro_registry.expand_macros(expanded, params)
             job_name = expanded.get('name')
             if jobs_glob and not matches(job_name, jobs_glob):
                 continue

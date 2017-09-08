@@ -18,6 +18,8 @@
 
 
 """
+Deprecated: please use :ref:`project_pipeline` instead.
+
 The workflow Project module handles creating Jenkins workflow projects.
 You may specify ``workflow`` in the ``project-type`` attribute of
 the :ref:`Job` definition.
@@ -45,29 +47,32 @@ Job template example:
       /../../tests/yamlparser/fixtures/project_workflow_template002.yaml
 
 """
+import logging
 import xml.etree.ElementTree as XML
 
-from jenkins_jobs.errors import MissingAttributeError
 import jenkins_jobs.modules.base
+from jenkins_jobs.modules.helpers import convert_mapping_to_xml
 
 
 class Workflow(jenkins_jobs.modules.base.Base):
     sequence = 0
 
     def root_xml(self, data):
+        logger = logging.getLogger(__name__)
+        logger.warning(
+            "Workflow job type is deprecated, please use Pipeline job type"
+        )
+
         xml_parent = XML.Element('flow-definition',
                                  {'plugin': 'workflow-job'})
         xml_definition = XML.SubElement(xml_parent, 'definition',
                                         {'plugin': 'workflow-cps',
                                          'class': 'org.jenkinsci.plugins.'
                                          'workflow.cps.CpsFlowDefinition'})
-        try:
-            XML.SubElement(xml_definition, 'script').text = data['dsl']
-        except KeyError as e:
-            raise MissingAttributeError(e.arg[0])
-
-        needs_workspace = data.get('sandbox', False)
-        XML.SubElement(xml_definition, 'sandbox').text = str(
-            needs_workspace).lower()
+        mapping = [
+            ('dsl', 'script', None),
+            ('sandbox', 'sandbox', False)]
+        convert_mapping_to_xml(xml_definition,
+            data, mapping, fail_required=True)
 
         return xml_parent

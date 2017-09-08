@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <project>
   <publishers>
-    <hudson.plugins.jacoco.JacocoPublisher>
+    <hudson.plugins.jacoco.JacocoPublisher plugin="jacoco">
       <execPattern>**/**.exec</execPattern>
       <classPattern>**/classes</classPattern>
       <sourcePattern>**/src/main/java</sourcePattern>
-      <changeBuildStatus/>
+      <changeBuildStatus>true</changeBuildStatus>
       <inclusionPattern/>
       <exclusionPattern/>
       <maximumBranchCoverage>10</maximumBranchCoverage>

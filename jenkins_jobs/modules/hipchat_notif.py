@@ -82,6 +82,7 @@ from six.moves import configparser
 
 import jenkins_jobs.errors
 import jenkins_jobs.modules.base
+from jenkins_jobs.modules.helpers import convert_mapping_to_xml
 
 
 logger = logging.getLogger(__name__)
@@ -101,9 +102,9 @@ class HipChat(jenkins_jobs.modules.base.Base):
            unless actually required.
         """
         jjb_config = self.registry.jjb_config
-        if(not self.authToken):
+        if not self.authToken:
             try:
-                self.authToken = jjb_config.get_module_config('hipchat',
+                self.authToken = jjb_config.get_plugin_config('hipchat',
                                                               'authtoken')
                 # Require that the authtoken is non-null
                 if self.authToken == '':
@@ -114,8 +115,8 @@ class HipChat(jenkins_jobs.modules.base.Base):
                 logger.fatal("The configuration file needs a hipchat section" +
                              " containing authtoken:\n{0}".format(e))
                 sys.exit(1)
-            self.jenkinsUrl = jjb_config.jenkins['url']
-            self.sendAs = jjb_config.get_module_config('hipchat', 'send-as')
+            self.jenkinsUrl = jjb_config.get_plugin_config('hipchat', 'url')
+            self.sendAs = jjb_config.get_plugin_config('hipchat', 'send-as')
 
     def gen_xml(self, xml_parent, data):
         hipchat = data.get('hipchat')
@@ -167,18 +168,15 @@ class HipChat(jenkins_jobs.modules.base.Base):
                                                     False))).lower()
 
         if version >= pkg_resources.parse_version("0.1.5"):
-            XML.SubElement(pdefhip, 'notifySuccess').text = str(
-                hipchat.get('notify-success', False)).lower()
-            XML.SubElement(pdefhip, 'notifyAborted').text = str(
-                hipchat.get('notify-aborted', False)).lower()
-            XML.SubElement(pdefhip, 'notifyNotBuilt').text = str(
-                hipchat.get('notify-not-built', False)).lower()
-            XML.SubElement(pdefhip, 'notifyUnstable').text = str(
-                hipchat.get('notify-unstable', False)).lower()
-            XML.SubElement(pdefhip, 'notifyFailure').text = str(
-                hipchat.get('notify-failure', False)).lower()
-            XML.SubElement(pdefhip, 'notifyBackToNormal').text = str(
-                hipchat.get('notify-back-to-normal', False)).lower()
+            mapping = [
+                ('notify-success', 'notifySuccess', False),
+                ('notify-aborted', 'notifyAborted', False),
+                ('notify-not-built', 'notifyNotBuilt', False),
+                ('notify-unstable', 'notifyUnstable', False),
+                ('notify-failure', 'notifyFailure', False),
+                ('notify-back-to-normal', 'notifyBackToNormal', False)]
+            convert_mapping_to_xml(pdefhip,
+                hipchat, mapping, fail_required=True)
 
         publishers = xml_parent.find('publishers')
         if publishers is None:

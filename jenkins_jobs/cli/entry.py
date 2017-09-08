@@ -59,7 +59,9 @@ class JenkinsJobs(object):
         self.parser = create_parser()
         self.options = self.parser.parse_args(args)
 
-        self.jjb_config = JJBConfig(self.options.conf, **kwargs)
+        self.jjb_config = JJBConfig(self.options.conf,
+                                    config_section=self.options.section,
+                                    **kwargs)
 
         if not self.options.command:
             self.parser.error("Must specify a 'command' to be performed")
@@ -86,6 +88,7 @@ class JenkinsJobs(object):
         self._set_config(self.jjb_config.builder, 'ignore_cache')
         self._set_config(self.jjb_config.builder, 'flush_cache')
         self._set_config(self.jjb_config.yamlparser, 'allow_empty_variables')
+        self._set_config(self.jjb_config.jenkins, 'section')
         self._set_config(self.jjb_config.jenkins, 'user')
         self._set_config(self.jjb_config.jenkins, 'password')
 
@@ -106,8 +109,8 @@ class JenkinsJobs(object):
                         key = 'CTRL+Z'
                     else:
                         key = 'CTRL+D'
-                    logger.warn("Reading configuration from STDIN. "
-                                "Press %s to end input.", key)
+                    logger.warning("Reading configuration from STDIN. "
+                                   "Press %s to end input.", key)
             else:
                 # take list of paths
                 self.options.path = self.options.path.split(os.pathsep)
