@@ -21,18 +21,14 @@ import re
 from string import Formatter
 
 from jenkins_jobs.errors import JenkinsJobsException
-from jenkins_jobs.local_yaml import CustomLoader
 
 logger = logging.getLogger(__name__)
 
 def recursive_format(s, paramdict, allow_empty=False):
+
 	lbracePos = s.find('{')
 	nextLBracePos = s.find('{', lbracePos+1)
 	rbracePos = s.find('}', lbracePos)
-
-	#keep {} if doubled, i.e. {{jojo}} --> {jojo}
-	if (nextLBracePos == lbracePos+1 and s[rbracePos+1] == '}'): 
-		return s[:lbracePos]+s[nextLBracePos:rbracePos]+s[rbracePos+1:]
 
 	if (lbracePos == -1): return s
 
@@ -45,121 +41,82 @@ def recursive_format(s, paramdict, allow_empty=False):
 	formattedStr = CustomFormatter(allow_empty).format(sToFormat, **paramdict)
 	s = s[:lbracePos]+formattedStr+s[rbracePos+1:]
 
-	return recursive_format(s, paramdict)	
-			
+	return recursive_format(s, paramdict)
 
-def deep_format(obj, paramdict, allow_empty=False):
-    """Apply the paramdict via str.format() to all string objects found within
-       the supplied obj. Lists and dicts are traversed recursively."""
-    # YAML serialisation was originally used to achieve this, but that places
-    # limitations on the values in paramdict - the post-format result must
-    # still be valid YAML (so substituting-in a string containing quotes, for
-    # example, is problematic).
-    if hasattr(obj, 'format'):
-        try:
-            result = re.match('^{obj:(?P<key>\w+)}$', obj)
-            if result is not None:
-                ret = paramdict[result.group("key")]
-            else:
-                s = obj
-                
-                recursive = (re.match('\{[^\}]*?\{',s) is not None)
-                if recursive:
-                    s = recursive_format(s, paramdict, allow_empty)
-                else:
-                    s = CustomFormatter(allow_empty).format(s, **paramdict)    
-                
-                ret = s
-        except KeyError as exc:
-            missing_key = exc.args[0]
-            desc = "%s parameter missing to format %s\nGiven:\n%s" % (
-                missing_key, obj, pformat(paramdict))
-            raise JenkinsJobsException(desc)
-        except Exception:
-            logging.error("Problem formatting with args:\nallow_empty:"
-                          "%s\nobj: %s\nparamdict: %s" %
-                          (allow_empty, obj, paramdict))
-            raise
 
-    elif isinstance(obj, list):
-        ret = type(obj)()
-        for item in obj:
-            ret.append(deep_format(item, paramdict, allow_empty))
-    elif isinstance(obj, dict):
-        ret = type(obj)()
-        for item in obj:
-            try:
-                ret[CustomFormatter(allow_empty).format(item, **paramdict)] = \
-                    deep_format(obj[item], paramdict, allow_empty)
-            except KeyError as exc:
-                missing_key = exc.args[0]
-                desc = "%s parameter missing to format %s\nGiven:\n%s" % (
-                    missing_key, obj, pformat(paramdict))
-                raise JenkinsJobsException(desc)
-            except Exception:
-                logging.error("Problem formatting with args:\nallow_empty:"
-                              "%s\nobj: %s\nparamdict: %s" %
-                              (allow_empty, obj, paramdict))
-                raise
-    else:
-        ret = obj
-    if isinstance(ret, CustomLoader):
-        # If we have a CustomLoader here, we've lazily-loaded a template;
-        # attempt to format it.
-        ret = deep_format(ret, paramdict, allow_empty=allow_empty)
-    return ret
+def deep_format(obj, paramdict, allow_empty=False, ignore_dollar_brackets=False):
+	"""Apply the paramdict via str.format() to all string objects found within
+	   the supplied obj. Lists and dicts are traversed recursively."""
+	# YAML serialisation was originally used to achieve this, but that places
+	# limitations on the values in paramdict - the post-format result must
+	# still be valid YAML (so substituting-in a string containing quotes, for
+	# example, is problematic).
+	if hasattr(obj, 'format'):
+		try:
+			result = re.match('^{obj:(?P<key>\w+)}$', obj)
+
+			if result is not None:
+				ret = paramdict[result.group("key")]
+			else:
+				s = obj
+				dollarBracket = re.search('\$\{[^\{][^\}]*?\}', obj)
+				if dollarBracket:
+					if ignore_dollar_brackets:
+						return obj
+
+				recursive = (re.search('\{[^\}]*?\{',s) is not None)
+				if False:
+					while recursive:
+						s = recursive_format(s, paramdict, allow_empty)
+						recursive = (re.search('\{[^\}]*?\{',s) is not None)
+				else:
+					s = CustomFormatter(allow_empty).format(s, **paramdict)
+
+				ret = s
+		except KeyError as exc:
+			missing_key = exc.args[0]
+			if (re.search('\{.*\}', missing_key)):
+				return recursive_format(s, paramdict, allow_empty)
+			desc = "%s parameter missing to format %s\nGiven:\n%s" % (
+				missing_key, obj, pformat(paramdict))
+			raise JenkinsJobsException(desc)
+	elif isinstance(obj, list):
+		ret = type(obj)()
+		for item in obj:
+			ret.append(deep_format(item, paramdict, allow_empty, ignore_dollar_brackets))
+	elif isinstance(obj, dict):
+		ret = type(obj)()
+		for item in obj:
+			try:
+				ret[CustomFormatter(allow_empty).format(item, **paramdict)] = \
+					deep_format(obj[item], paramdict, allow_empty, ignore_dollar_brackets)
+			except KeyError as exc:
+				missing_key = exc.args[0]
+				desc = "%s parameter missing to format %s\nGiven:\n%s" % (
+					missing_key, obj, pformat(paramdict))
+				raise JenkinsJobsException(desc)
+	else:
+		ret = obj
+	return ret
 
 
 class CustomFormatter(Formatter):
-    """
-    Custom formatter to allow non-existing key references when formatting a
-    string
-    """
-    _expr = '{({{)*(?:obj:)?(?P<key>\w+)(?:\|(?P<default>[\w\s]*))?}(}})*'
+	"""
+	Custom formatter to allow non-existing key references when formatting a
+	string
+	"""
+	def __init__(self, allow_empty=False):
+		super(CustomFormatter, self).__init__()
+		self.allow_empty = allow_empty
 
-    def __init__(self, allow_empty=False):
-        super(CustomFormatter, self).__init__()
-        self.allow_empty = allow_empty
-
-    def vformat(self, format_string, args, kwargs):
-        matcher = re.compile(self._expr)
-
-        # special case of returning the object if the entire string
-        # matches a single parameter
-        try:
-            result = re.match('^%s$' % self._expr, format_string)
-        except TypeError:
-            return format_string.format(**kwargs)
-        if result is not None:
-            try:
-                return kwargs[result.group("key")]
-            except KeyError:
-                pass
-
-        # handle multiple fields within string via a callback to re.sub()
-        def re_replace(match):
-            key = match.group("key")
-            default = match.group("default")
-
-            if default is not None:
-                if key not in kwargs:
-                    return default
-                else:
-                    return "{%s}" % key
-            return match.group(0)
-
-        format_string = matcher.sub(re_replace, format_string)
-
-        return Formatter.vformat(self, format_string, args, kwargs)
-
-    def get_value(self, key, args, kwargs):
-        try:
-            return Formatter.get_value(self, key, args, kwargs)
-        except KeyError:
-            if self.allow_empty:
-                logger.debug(
-                    'Found uninitialized key %s, replaced with empty string',
-                    key
-                )
-                return ''
-            raise
+	def get_value(self, key, args, kwargs):
+		try:
+			return Formatter.get_value(self, key, args, kwargs)
+		except KeyError:
+			if self.allow_empty:
+				logger.debug(
+					'Found uninitialized key %s, replaced with empty string',
+					key
+				)
+				return ''
+			raise

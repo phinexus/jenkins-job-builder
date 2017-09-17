@@ -121,7 +121,13 @@ class JenkinsManager(object):
                                  'version': '',
                                  'longName': ''}]
             else:
-                raise e
+                logger.warning(
+                    "Unable to retrieve Jenkins Plugin Info from {0} because of {1},"
+                    " using default empty plugins info list.".format(
+                        self.jenkins.server, str(e)))
+                plugins_list = [{'shortName': '',
+                                 'version': '',
+                                 'longName': ''}]
         logger.debug("Jenkins Plugin Info {0}".format(pformat(plugins_list)))
 
         return plugins_list

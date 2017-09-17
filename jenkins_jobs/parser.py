@@ -197,7 +197,7 @@ class YamlParser(object):
             if key.startswith('merge:'):
                 mergeVal = mergeData[key]
                 keyToMerge = key[len('merge:'):]
-                
+
                 if keyToMerge in baseData:
                     baseDataVal = baseData[keyToMerge]
                     if isinstance (baseDataVal, list):
@@ -221,35 +221,35 @@ class YamlParser(object):
     def _applyDefaults(self, data, override_dict=None):
         if override_dict is None:
             override_dict = {}
-        
+
         #create empty dict for return data
         newdata = {}
-        
+
         #get name or list of names of defaults
         defaultsList = data.get('defaults', 'global')
-        
+
         if not isinstance(defaultsList, list):
             defaultsList = [defaultsList]
-                
-        for defName in defaultsList:        
+
+        for defName in defaultsList:
             #make a local copy of the defaults named [defName]
             defaults = copy.deepcopy(self.data.get('defaults',{}).get(defName, {}))
-                                     
+
             #if defaults has defaults, apply those
             superdefaults = defaults.get('defaults', None)
-            if superdefaults is not None: 
-            	#newdata.update( self.applyDefaults(defaults) ) 
+            if superdefaults is not None:
+            	#newdata.update( self.applyDefaults(defaults) )
                 newdata = self.updateAndMerge(newdata, self._applyDefaults(defaults))
-            
-            #if it is blank, but was specified by name, there's a problem                         
+
+            #if it is blank, but was specified by name, there's a problem
             if defaults == {} and defName != 'global':
                 raise JenkinsJobsException("Unknown defaults set: '{0}'"
                                            .format(defName))
-            #lay it into the return data                               
+            #lay it into the return data
 #           newdata.update(defaults)
             newdata = self.updateAndMerge(newdata, defaults)
 
-            
+
         #lay the override_dict (parameter) into the return data
         for key in override_dict.keys():
             if key in newdata.keys():
@@ -441,7 +441,7 @@ class YamlParser(object):
             try:
                 expanded = deep_format(
                     template, params,
-                    self.jjb_config.yamlparser['allow_empty_variables'])
+                    self.jjb_config.yamlparser['allow_empty_variables'], True)
             except Exception:
                 logging.error(
                     "Failure formatting template '%s', containing '%s' with "
@@ -452,10 +452,10 @@ class YamlParser(object):
             job_name = expanded.get('name')
             if jobs_glob and not matches(job_name, jobs_glob):
                 continue
-            
+
             # resolve all values holding params when finished constructing xml
             params.update(expanded)
-            expanded = deep_format(expanded,params)
+            expanded = deep_format(expanded,params,True,True)
 
             self._formatDescription(expanded)
             self.jobs.append(expanded)
