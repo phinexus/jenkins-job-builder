@@ -1,0 +1,15 @@
+# To change this license header, choose License Headers in Project Properties.
+# To change this template file, choose Tools | Templates
+# and open the template in the editor.
+FROM jjb
+
+ENV CodeDir /usr/local/lib/python3.6/site-packages/jenkins_jobs
+
+WORKDIR ${CodeDir}
+RUN find . -type f -name '*.pyc' -delete
+VOLUME ${CodeDir}
+
+WORKDIR /jjb-jobs
+ 
+COPY enterscript.sh /
+ENTRYPOINT ["/enterscript.sh"]
