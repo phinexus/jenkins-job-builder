@@ -112,7 +112,7 @@ class JenkinsManager(object):
             plugins_list = self.jenkins.get_plugins().values()
 
         except jenkins.JenkinsException as e:
-            if re.search("(Connection refused|Forbidden)", str(e)):
+            if ( re.search("Connection refused|Forbidden", str(e)) or re.search("Cannot assign requested address", str(e)) ):
                 logger.warning(
                     "Unable to retrieve Jenkins Plugin Info from {0},"
                     " using default empty plugins info list.".format(
